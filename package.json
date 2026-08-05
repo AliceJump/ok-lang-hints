@@ -1,0 +1,93 @@
+{
+  "name": "ok-lang-hints",
+  "displayName": "ok-script Lang Hints",
+  "description": "为 ok-script 的 self.lang 与 FeatureList/fL 提供智能补全、值提示、类型区分、模板 hover 预览和图片缓存。",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AliceJump/ok-lang-hints.git"
+  },
+  "homepage": "https://github.com/AliceJump/ok-lang-hints#readme",
+  "bugs": {
+    "url": "https://github.com/AliceJump/ok-lang-hints/issues"
+  },
+  "keywords": [
+    "ok-script",
+    "python",
+    "localization",
+    "inlay hints",
+    "FeatureList",
+    "template matching"
+  ],
+  "galleryBanner": {
+    "color": "#172554",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:python"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "ok-script Lang Hints",
+      "properties": {
+        "okLangHints.langDirectory": {
+          "type": "string",
+          "default": "assets/lang",
+          "description": "lang JSON 目录（相对于工作区根目录）。"
+        },
+        "okLangHints.displayLocale": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "zh_CN",
+            "zh_TW",
+            "en_US",
+            "ja_JP",
+            "ko_KR",
+            "es_ES"
+          ],
+          "description": "幽灵注释/hover 使用的默认语言；auto = 跟随 VS Code UI 语言。hover 始终显示全部语言。"
+        },
+        "okLangHints.enableInlayHints": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否启用幽灵注释（在 self.lang.X.Y 后行内显示对应值）。"
+        },
+        "okLangHints.featureAliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "fL",
+            "FeatureList"
+          ],
+          "description": "FeatureList 模板的可用别名（补全和 hover 均按此识别）。默认支持 fL 与 FeatureList；例如 [\"fL\", \"FeatureList\"]。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
+    "typescript": "^5.4.0"
+  }
+}
