@@ -3,7 +3,7 @@
   "displayName": "ok-script Lang Hints",
   "description": "为 ok-script 的 self.lang 与 FeatureList/fL 提供智能补全、值提示、类型区分、模板 hover 预览和图片缓存。",
   "version": "0.1.0",
-  "publisher": "local",
+  "publisher": "AliceJump",
   "license": "MIT",
   "icon": "icon.png",
   "repository": {

@@ -181,13 +181,13 @@ function encodePng(width: number, height: number, rgba: Buffer): Buffer {
   ]);
 }
 
-/** 从 RGBA 像素按 bbox 裁剪并编码为 PNG data URL（含等比缩小） */
+/** 从 RGBA 像素按 bbox 裁剪并编码为 PNG data URL（统一高度等比缩放） */
 function cropAndEncode(
   width: number,
   height: number,
   rgba: Buffer,
   bbox: [number, number, number, number],
-  maxEdge: number,
+  targetHeight: number,
 ): string {
   const [bx, by, bw, bh] = bbox;
   const cx = Math.max(0, Math.min(bx, width));
@@ -202,21 +202,16 @@ function cropAndEncode(
     rgba.copy(cropped, y * cw * 4, srcStart, srcStart + cw * 4);
   }
 
-  // 若模板太大，等比缩小到 maxEdge
-  let outW = cw;
-  let outH = ch;
-  let pixels = cropped;
-  if (Math.max(cw, ch) > maxEdge) {
-    const scale = maxEdge / Math.max(cw, ch);
-    outW = Math.max(1, Math.round(cw * scale));
-    outH = Math.max(1, Math.round(ch * scale));
-    pixels = Buffer.alloc(outW * outH * 4);
-    for (let y = 0; y < outH; y++) {
-      const sy = Math.min(ch - 1, Math.floor(y / scale));
-      for (let x = 0; x < outW; x++) {
-        const sx = Math.min(cw - 1, Math.floor(x / scale));
-        cropped.copy(pixels, (y * outW + x) * 4, (sy * cw + sx) * 4, (sy * cw + sx) * 4 + 4);
-      }
+  // 统一高度等比缩放（不足 targetHeight 也放大到统一高度）
+  const scale = targetHeight / ch;
+  const outW = Math.max(1, Math.round(cw * scale));
+  const outH = Math.max(1, Math.round(ch * scale));
+  const pixels = Buffer.alloc(outW * outH * 4);
+  for (let y = 0; y < outH; y++) {
+    const sy = Math.min(ch - 1, Math.floor(y / scale));
+    for (let x = 0; x < outW; x++) {
+      const sx = Math.min(cw - 1, Math.floor(x / scale));
+      cropped.copy(pixels, (y * outW + x) * 4, (sy * cw + sx) * 4, (sy * cw + sx) * 4 + 4);
     }
   }
 
@@ -228,12 +223,12 @@ function cropAndEncode(
 export function cropTemplateToDataUrl(
   imagePath: string,
   bbox: [number, number, number, number],
-  maxEdge = 240,
+  targetHeight = 100,
 ): string | undefined {
   try {
     const buf = fs.readFileSync(imagePath);
     const { width, height, rgba } = decodeRgba(buf);
-    return cropAndEncode(width, height, rgba, bbox, maxEdge);
+    return cropAndEncode(width, height, rgba, bbox, targetHeight);
   } catch {
     return undefined;
   }
@@ -245,21 +240,21 @@ const CROP_CACHE_MAX = 600;
 function cropKey(
   imagePath: string,
   bbox: [number, number, number, number],
-  maxEdge: number,
+  targetHeight: number,
 ): string {
-  return `${imagePath}|${bbox.join(',')}|${maxEdge}`;
+  return `${imagePath}|${bbox.join(',')}|${targetHeight}`;
 }
 
 /** 带缓存的裁剪：同图同 bbox 只解码一次（缓存 data URL）。 */
 export function cropTemplateToDataUrlCached(
   imagePath: string,
   bbox: [number, number, number, number],
-  maxEdge = 240,
+  targetHeight = 100,
 ): string | undefined {
-  const key = cropKey(imagePath, bbox, maxEdge);
+  const key = cropKey(imagePath, bbox, targetHeight);
   const hit = CROP_CACHE.get(key);
   if (hit !== undefined) return hit;
-  const url = cropTemplateToDataUrl(imagePath, bbox, maxEdge);
+  const url = cropTemplateToDataUrl(imagePath, bbox, targetHeight);
   if (url !== undefined) {
     if (CROP_CACHE.size >= CROP_CACHE_MAX) CROP_CACHE.clear();
     CROP_CACHE.set(key, url);
@@ -271,7 +266,7 @@ export function cropTemplateToDataUrlCached(
 export interface CropRequest {
   imagePath: string;
   bbox: [number, number, number, number];
-  maxEdge?: number;
+  targetHeight?: number;
 }
 
 /**
@@ -296,20 +291,20 @@ export async function warmCropCache(
     const chunk = imagePaths.slice(i, i + batchSize);
     for (const imagePath of chunk) {
       const items = groups.get(imagePath)!;
-      const maxEdge = items[0]?.maxEdge ?? 240;
+      const targetHeight = items[0]?.targetHeight ?? 100;
       // 该原图的所有模板都已缓存则整组跳过
-      if (items.every((it) => CROP_CACHE.has(cropKey(it.imagePath, it.bbox, it.maxEdge ?? maxEdge)))) {
+      if (items.every((it) => CROP_CACHE.has(cropKey(it.imagePath, it.bbox, it.targetHeight ?? targetHeight)))) {
         continue;
       }
       try {
         const buf = fs.readFileSync(imagePath);
         const { width, height, rgba } = decodeRgba(buf);
         for (const it of items) {
-          const edge = it.maxEdge ?? maxEdge;
-          const key = cropKey(it.imagePath, it.bbox, edge);
+          const th = it.targetHeight ?? targetHeight;
+          const key = cropKey(it.imagePath, it.bbox, th);
           if (CROP_CACHE.has(key)) continue;
           if (CROP_CACHE.size >= CROP_CACHE_MAX) CROP_CACHE.clear();
-          CROP_CACHE.set(key, cropAndEncode(width, height, rgba, it.bbox, edge));
+          CROP_CACHE.set(key, cropAndEncode(width, height, rgba, it.bbox, th));
         }
       } catch {
         // 单张原图失败忽略，后续 hover 再按需处理
