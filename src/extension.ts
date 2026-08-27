@@ -1,18 +1,26 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
-import { LangData } from './langData';
+import { LangData, poDirectorySetting } from './langData';
 import { FeatureData } from './featureData';
-import { clearCropCache, warmCropCache } from './pngCrop';
+import { clearCropCache, clearThumbDir, warmCropCache } from './pngCrop';
 import {
   LangCompletionProvider,
   LangHoverProvider,
   LangInlayHintsProvider,
 } from './providers';
+import {
+  TemplateGalleryPanel,
+  TemplateGalleryViewProvider,
+  repaintAllGalleries,
+} from './templatePanel';
 
 export function activate(context: vscode.ExtensionContext): void {
   const folder = vscode.workspace.workspaceFolders?.[0];
   const data = new LangData(folder);
   const features = new FeatureData(folder);
   const inlay = new LangInlayHintsProvider(data, features);
+  // 模板缩略图 PNG 落盘目录（webview 经 asWebviewUri 加载）
+  const thumbDir = path.join(context.globalStorageUri.fsPath, 'template-thumbs');
 
   // 后台预热：把全部模板缩略图裁进缓存，后续 hover/补全直接命中
   const prewarm = () => {
@@ -32,17 +40,33 @@ export function activate(context: vscode.ExtensionContext): void {
       data.refresh(true);
       features.refresh(true);
       clearCropCache();
+      clearThumbDir(thumbDir); // 缩略图文件名是确定性的，图片变化后必须清掉旧文件
       prewarm();
       inlay.fire();
+      repaintAllGalleries(); // 模板视图已打开时同步刷新
     }, 300);
   };
-  const watcher = vscode.workspace.createFileSystemWatcher(
-    '**/{assets/lang/*.json,assets/coco_annotations.json,assets/images/*.png,ok_tasks/assets/coco_annotations.json,ok_tasks/assets/images/*.png}',
-  );
-  context.subscriptions.push(watcher);
-  watcher.onDidChange(refresh);
-  watcher.onDidCreate(refresh);
-  watcher.onDidDelete(refresh);
+
+  /** 转义 glob 元字符（PO 目录可能含 . 等） */
+  const escapeGlobSeg = (s: string) => s.replace(/([\\*?[\]{}()!])/g, '\\$1');
+
+  /** 语言数据监听 glob：lang JSON + gettext PO + 模板数据 */
+  const langWatchPattern = () => {
+    const poDir = poDirectorySetting().replace(/[\\/]+$/, '');
+    const poGlob = poDir.split(/[\\/]/).map(escapeGlobSeg).join('/');
+    return `**/{assets/lang/*.json,${poGlob}/**/*.po,assets/coco_annotations.json,assets/images/*.png,ok_tasks/assets/coco_annotations.json,ok_tasks/assets/images/*.png}`;
+  };
+
+  let watcher: vscode.FileSystemWatcher | undefined;
+  const recreateWatcher = () => {
+    if (watcher) watcher.dispose();
+    watcher = vscode.workspace.createFileSystemWatcher(langWatchPattern());
+    watcher.onDidChange(refresh);
+    watcher.onDidCreate(refresh);
+    watcher.onDidDelete(refresh);
+    return watcher;
+  };
+  context.subscriptions.push(recreateWatcher());
 
   context.subscriptions.push(
     vscode.languages.registerInlayHintsProvider(
@@ -56,15 +80,29 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.languages.registerCompletionItemProvider(
       { language: 'python', scheme: 'file' },
       new LangCompletionProvider(data, features),
-      '.',
+      '.', "'", '"',
     ),
+    vscode.window.registerWebviewViewProvider(
+      TemplateGalleryViewProvider.viewType,
+      new TemplateGalleryViewProvider(features, thumbDir),
+    ),
+    vscode.commands.registerCommand('okLangHints.showTemplates', () => {
+      // 聚焦活动栏中的模板视图（左侧图标 Tab）
+      void vscode.commands.executeCommand(`${TemplateGalleryViewProvider.viewType}.focus`);
+    }),
+    vscode.commands.registerCommand('okLangHints.openTemplatesEditor', () => {
+      TemplateGalleryPanel.show(features, thumbDir);
+    }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('okLangHints')) {
+        recreateWatcher();
         data.refresh(true);
         features.refresh(true);
         clearCropCache();
+        clearThumbDir(thumbDir);
         prewarm();
         inlay.fire();
+        repaintAllGalleries();
       }
     }),
   );

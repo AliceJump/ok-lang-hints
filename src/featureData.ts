@@ -96,4 +96,99 @@ export class FeatureData {
     this.refresh();
     return [...this.cache.values()];
   }
+
+  /** 工作区根目录（供原图映射等使用） */
+  get root(): string {
+    return this.rootDir;
+  }
+}
+
+/* ---------------- ok_templates 原图反查（labelme json 索引） ---------------- */
+
+/**
+ * ok-script 的 ok_templates 目录里，N.png 是原始截图、N.json 是对应的 labelme 标注。
+ * coco 的 assets/images/N.png 与 ok_templates/N.png 编号并不对应，
+ * 必须按「模板名 + 标注坐标」在 labelme json 中反查真正的原图。
+ */
+
+interface LabelmeShape {
+  label?: string;
+  shape_type?: string;
+  points?: number[][];
+}
+
+interface LabelmeIndex {
+  builtAt: number;
+  /** `${label}|${x},${y}` → 原图绝对路径 */
+  byKey: Map<string, string>;
+}
+
+const labelmeIndexes = new Map<string, LabelmeIndex>();
+const LABELME_TTL_MS = 30_000;
+
+function buildLabelmeIndex(rootDir: string): LabelmeIndex {
+  const byKey = new Map<string, string>();
+  const dirs = [
+    path.join(rootDir, 'ok_templates'),
+    path.join(rootDir, 'ok_tasks', 'ok_templates'),
+  ];
+  for (const dir of dirs) {
+    let files: string[] = [];
+    try {
+      if (!fs.existsSync(dir)) continue;
+      files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
+    } catch {
+      continue;
+    }
+    for (const f of files) {
+      const jsonPath = path.join(dir, f);
+      const pngPath = path.join(dir, f.replace(/\.json$/, '.png'));
+      try {
+        if (!fs.existsSync(pngPath)) continue;
+        const data = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+        const shapes: LabelmeShape[] = Array.isArray(data?.shapes) ? data.shapes : [];
+        for (const s of shapes) {
+          if (!s || s.shape_type !== 'rectangle' || typeof s.label !== 'string') continue;
+          const pts = s.points;
+          if (!Array.isArray(pts) || pts.length < 2) continue;
+          const xs = pts.map((p) => p[0]);
+          const ys = pts.map((p) => p[1]);
+          const x = Math.round(Math.min(...xs));
+          const y = Math.round(Math.min(...ys));
+          byKey.set(`${s.label}|${x},${y}`, pngPath);
+        }
+      } catch {
+        // 坏文件跳过
+      }
+    }
+  }
+  return { builtAt: Date.now(), byKey };
+}
+
+function getLabelmeIndex(rootDir: string): LabelmeIndex {
+  const hit = labelmeIndexes.get(rootDir);
+  if (hit && Date.now() - hit.builtAt < LABELME_TTL_MS) return hit;
+  const fresh = buildLabelmeIndex(rootDir);
+  labelmeIndexes.set(rootDir, fresh);
+  return fresh;
+}
+
+/**
+ * 按「模板名 + bbox 左上角」反查 ok_templates 中的原始截图。
+ * 精确匹配失败时，若该模板名只出现在一张原图中则使用它；找不到返回 undefined。
+ */
+export function findOkTemplateOriginal(
+  rootDir: string,
+  name: string,
+  bbox: [number, number, number, number],
+): string | undefined {
+  if (!rootDir) return undefined;
+  const idx = getLabelmeIndex(rootDir);
+  const exact = idx.byKey.get(`${name}|${bbox[0]},${bbox[1]}`);
+  if (exact) return exact;
+  const hits = new Set<string>();
+  for (const [k, v] of idx.byKey) {
+    if (k.startsWith(`${name}|`)) hits.add(v);
+  }
+  return hits.size === 1 ? [...hits][0] : undefined;
 }

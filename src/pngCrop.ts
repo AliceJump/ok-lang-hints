@@ -1,5 +1,8 @@
 import * as fs from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
 import * as zlib from 'zlib';
+import { findOkTemplateOriginal } from './featureData';
 
 /** 极简 PNG 解码/裁剪/编码：从原图按 bbox 裁出模板小图，返回 data URL。 */
 
@@ -316,4 +319,203 @@ export async function warmCropCache(
 /** 模板标注/图片变化时清空裁剪缓存。 */
 export function clearCropCache(): void {
   CROP_CACHE.clear();
+}
+
+/* ---------------- 缩略图落盘（供 webview 通过 asWebviewUri 加载） ---------------- */
+
+/** 生成确定性文件名：同图同 bbox 同尺寸 → 同一文件，天然去重 */
+function thumbFileName(imagePath: string, bbox: [number, number, number, number], targetHeight: number): string {
+  const key = `${imagePath}|${bbox.join(',')}|${targetHeight}`;
+  const hash = crypto.createHash('sha1').update(key).digest('hex').slice(0, 16);
+  return `t_${hash}.png`;
+}
+
+/**
+ * 把模板缩略图写成 PNG 文件（复用 data URL 裁剪缓存），返回文件绝对路径。
+ * webview 中用 asWebviewUri 加载本地文件比 data: URL 更可靠。
+ */
+export function cropTemplateThumbFile(
+  imagePath: string,
+  bbox: [number, number, number, number],
+  outDir: string,
+  targetHeight = 96,
+): string | undefined {
+  const file = path.join(outDir, thumbFileName(imagePath, bbox, targetHeight));
+  try {
+    if (fs.existsSync(file) && fs.statSync(file).size > 0) return file;
+  } catch {
+    // 状态异常则重写
+  }
+  const url = cropTemplateToDataUrlCached(imagePath, bbox, targetHeight);
+  if (!url) return undefined;
+  try {
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(file, Buffer.from(url.slice(url.indexOf(',') + 1), 'base64'));
+    return file;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 清空缩略图目录内容（目录不存在则忽略；递归删除子目录）。 */
+export function clearThumbDir(outDir: string): void {
+  try {
+    if (!fs.existsSync(outDir)) return;
+    for (const f of fs.readdirSync(outDir)) {
+      try {
+        fs.rmSync(path.join(outDir, f), { recursive: true, force: true });
+      } catch {
+        // 单个删除失败忽略
+      }
+    }
+  } catch {
+    // 忽略
+  }
+}
+
+/* ---------------- 原图查看（ok_templates 原图 + bbox 红框标注） ---------------- */
+
+/**
+ * 把 assets/images/N.png 映射到真正的原始截图 ok_templates/N.png。
+ * 兼容 ok_tasks/assets/images → ok_tasks/ok_templates 与仓库根 ok_templates；
+ * 找不到映射时回退原路径。
+ */
+export function resolveOriginalImagePath(imagePath: string): string {
+  const m = imagePath.match(/^(.*[/\\])assets[/\\]images([/\\][^/\\]+)$/);
+  if (!m) return imagePath;
+  const candidates: string[] = [];
+  const rest = m[2];
+  let prefix = m[1];
+  candidates.push(path.join(prefix, 'ok_templates', rest));
+  // ok_tasks/assets/images → 仓库根的 ok_templates
+  const stripped = prefix.replace(/ok_tasks[/\\]$/, '');
+  if (stripped !== prefix) candidates.push(path.join(stripped, 'ok_templates', rest));
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c)) return c;
+    } catch {
+      // 忽略
+    }
+  }
+  return imagePath;
+}
+
+/** 在 RGBA 像素上沿矩形边缘向内画描边 */
+function strokeRectInward(
+  rgba: Buffer,
+  imgW: number,
+  imgH: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  thickness: number,
+  r: number,
+  g: number,
+  b: number,
+): void {
+  const x0 = Math.max(0, x);
+  const y0 = Math.max(0, y);
+  const x1 = Math.min(imgW - 1, x + w - 1);
+  const y1 = Math.min(imgH - 1, y + h - 1);
+  if (x1 < x0 || y1 < y0) return;
+  for (let py = y0; py <= y1; py++) {
+    for (let px = x0; px <= x1; px++) {
+      if (px < x0 + thickness || px > x1 - thickness || py < y0 + thickness || py > y1 - thickness) {
+        const i = (py * imgW + px) * 4;
+        rgba[i] = r;
+        rgba[i + 1] = g;
+        rgba[i + 2] = b;
+        rgba[i + 3] = 255;
+      }
+    }
+  }
+}
+
+/** 在 bbox 处画标注框：红色主框（覆盖 bbox 边缘）+ 外圈白色光晕，任何底色下都可见 */
+function drawRectOutline(
+  rgba: Buffer,
+  imgW: number,
+  imgH: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  thickness: number,
+): void {
+  const halo = Math.max(2, thickness >> 1);
+  // 先画白色：矩形向外扩 halo，描边宽度 thickness+halo，随后红色覆盖其内侧 thickness，
+  // 最终效果 = bbox 边缘内 thickness 红色 + 向外 halo 白色
+  strokeRectInward(rgba, imgW, imgH, x - halo, y - halo, w + 2 * halo, h + 2 * halo, thickness + halo, 255, 255, 255);
+  strokeRectInward(rgba, imgW, imgH, x, y, w, h, thickness, 255, 40, 40);
+}
+
+/**
+ * 解码原图、在 bbox 处画红框标注并写出 PNG。
+ * 返回输出文件路径；失败返回 undefined。
+ */
+export function writeAnnotatedImage(
+  imagePath: string,
+  bbox: [number, number, number, number],
+  outPath: string,
+): string | undefined {
+  try {
+    const buf = fs.readFileSync(imagePath);
+    const { width, height, rgba } = decodeRgba(buf);
+    const [bx, by, bw, bh] = [
+      Math.max(0, Math.min(bbox[0], width - 1)),
+      Math.max(0, Math.min(bbox[1], height - 1)),
+      Math.max(1, Math.min(bbox[2], width - Math.max(0, bbox[0]))),
+      Math.max(1, Math.min(bbox[3], height - Math.max(0, bbox[1]))),
+    ];
+    const thickness = Math.max(3, Math.min(10, Math.round(Math.min(width, height) * 0.004)));
+    drawRectOutline(rgba, width, height, bx, by, bw, bh, thickness);
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    // 大图用低压缩级别换取生成速度
+    fs.writeFileSync(outPath, encodePng(width, height, rgba));
+    return outPath;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 生成（带缓存）"原始截图 + bbox 红框标注" 的 PNG，返回文件路径。
+ * 原图来源按优先级：
+ *   1. ok_templates 反查（labelme json 按模板名+坐标匹配，最准确）
+ *   2. assets 同级 ok_templates 同名文件（编号恰好一致时）
+ *   3. coco 引用的 assets/images 副本兜底
+ * 同一来源同一 bbox 只生成一次。
+ */
+export function openAnnotatedImage(
+  imagePath: string,
+  name: string,
+  bbox: [number, number, number, number],
+  thumbDir: string,
+  rootDir: string,
+): string | undefined {
+  const candidates: string[] = [];
+  const viaLabelme = findOkTemplateOriginal(rootDir, name, bbox);
+  if (viaLabelme) candidates.push(viaLabelme);
+  const viaSibling = resolveOriginalImagePath(imagePath);
+  if (!candidates.includes(viaSibling)) candidates.push(viaSibling);
+  if (!candidates.includes(imagePath)) candidates.push(imagePath);
+
+  for (const src of candidates) {
+    try {
+      if (!fs.existsSync(src)) continue;
+    } catch {
+      continue;
+    }
+    const key = crypto.createHash('sha1').update(`${src}|${bbox.join(',')}`).digest('hex').slice(0, 16);
+    const out = path.join(thumbDir, 'annotated', `a_${key}.png`);
+    try {
+      if (fs.existsSync(out) && fs.statSync(out).size > 0) return out;
+    } catch {
+      // 状态异常则重新生成
+    }
+    const written = writeAnnotatedImage(src, bbox, out);
+    if (written) return written;
+  }
+  return undefined;
 }

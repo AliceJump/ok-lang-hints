@@ -33,10 +33,52 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:python"
+    "onLanguage:python",
+    "onView:okLangHints.templateGallery"
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "okLangHints.showTemplates",
+        "title": "打开模板面板",
+        "category": "ok-script Lang Hints"
+      },
+      {
+        "command": "okLangHints.openTemplatesEditor",
+        "title": "在编辑器中打开模板面板（大窗口）",
+        "category": "ok-script Lang Hints"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "okLangHints",
+          "title": "ok-script 模板",
+          "icon": "media/templates.svg"
+        }
+      ]
+    },
+    "views": {
+      "okLangHints": [
+        {
+          "type": "webview",
+          "id": "okLangHints.templateGallery",
+          "name": "模板面板",
+          "webviewOptions": {
+            "retainContextWhenHidden": true
+          }
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "okLangHints.showTemplates",
+        "key": "ctrl+alt+t",
+        "mac": "cmd+alt+t",
+        "when": "editorLangId == python"
+      }
+    ],
     "configuration": {
       "title": "ok-script Lang Hints",
       "properties": {
@@ -44,6 +86,26 @@
           "type": "string",
           "default": "assets/lang",
           "description": "lang JSON 目录（相对于工作区根目录）。"
+        },
+        "okLangHints.poDirectory": {
+          "type": "string",
+          "default": "i18n",
+          "description": "gettext PO 目录（相对于工作区根目录），按 <locale>/LC_MESSAGES/*.po 结构扫描；文件名（domain）作为 lang 模块，msgid 作为 key，msgstr 作为值。"
+        },
+        "okLangHints.enablePoData": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否启用 gettext PO 数据源（读取 poDirectory 下的 .po 文件，并与 lang JSON 合并）。"
+        },
+        "okLangHints.poDomains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "ocr"
+          ],
+          "description": "要加载的 gettext PO domain（文件名，不含 .po 后缀）；仅列出的 domain 会作为 lang 模块。默认只加载 ocr，排除 ok 等 UI 通用文案。"
         },
         "okLangHints.displayLocale": {
           "type": "string",

@@ -12,6 +12,12 @@
 - hover 显示所有支持语言的表格：`zh_CN`、`zh_TW`、`en_US`、`ja_JP`、`ko_KR`、`es_ES`。
 - 自动回退当前语言 → `zh_CN` → 第一个可用语言。
 
+### OCR 函数 `match` 参数（`ocr.po` 修正）
+
+- 在 `ocr` / `wait_ocr` / `wait_click_ocr` / `find_boxes` 等函数的 `match` 参数位置，若传入正则对象 `re.compile(r"...")`（也支持字符串/列表），悬停可查看该 pattern 在 `ocr.po` 中的全部语言修正映射。
+- 行内显示修正后的值：如 `match=re.compile(r"体力.*")` 后显示幽灵注释 `→ 体力[0-9]+`。
+- 在 `re.compile(r"` 或 `match="` 的引号内输入，可补全 `ocr.po` 中的 key（含自动生成的去空格副本）。
+
 ### `fL` / `FeatureList` 模板
 
 - 输入 `fL.` 或 `FeatureList.`：补全 COCO 标注中的模板名称。
@@ -20,6 +26,23 @@
 - 模板图片在扩展激活时后台预热并缓存，hover 和补全详情避免重复解码 4K 原图。
 - 标注或模板 PNG 变化后自动清理缓存并重新预热；批量文件变化使用防抖处理。
 
+### 模板面板（可视化浏览全部模板）
+
+两种打开方式：
+
+1. **侧边栏视图（推荐）**：点击左侧活动栏的"ok-script 模板"图标（网格样式），即可展开模板面板；也可执行命令 **ok-script Lang Hints: 打开模板面板**（快捷键 `Ctrl+Alt+T`）聚焦该视图。
+2. **编辑器大窗口**：执行命令 **ok-script Lang Hints: 在编辑器中打开模板面板（大窗口）**，在编辑器区打开更大的网格视图。
+
+面板功能：
+
+- 网格展示工作区全部模板的缩略图（按 COCO `bbox` 从原图裁剪，与 hover 预览一致）。
+- 每张卡片显示模板名称与尺寸；悬停可查看名称、尺寸、`bbox` 坐标和来源图片路径。
+- 顶部搜索框实时按名称过滤，并显示匹配数量。
+- **单击卡片**：把 `fL.<模板名>` 插入到最近活动的 Python 编辑器光标处（别名跟随 `okLangHints.featureAliases` 配置的第一项）。
+- **双击卡片**：复制 `fL.<模板名>` 到剪贴板。
+- **点击缩略图**：打开来源原图。
+- 标注 / 模板图片变化后自动刷新面板内容，无需手动重开。
+
 扩展只针对 `python` 文件生效，不修改源代码，也不生成存根文件。
 
 ## 数据来源
@@ -27,6 +50,7 @@
 默认从当前工作区读取：
 
 - `assets/lang/*.json`：语言数据，节点格式为 `{ "string": "..." }` 或 `{ "pattern": "..." }`。
+- `i18n/<locale>/LC_MESSAGES/*.po`：gettext PO 数据（`okLangHints.enablePoData` 控制，默认开启）。仅加载 `okLangHints.poDomains` 白名单内的 domain（默认 `ocr`，排除 `ok.po` 等 UI 通用文案）。`msgid`（如 `借 款 金 额`、`体力.*`）作为 key，`msgstr` 作为对应语言的 `string` 值；含空格的 `msgid` 会自动生成去空格副本（`借款金额`）。该数据用于 OCR 函数 `match` 参数的提示，不作为 `self.lang` 模块。
 - `assets/coco_annotations.json`：模板名称、原图和 `bbox`。
 - `assets/images/*.png`：模板预览使用的原图。
 - 如果存在，也会读取 `ok_tasks/assets/coco_annotations.json` 与 `ok_tasks/assets/images/*.png`。
@@ -55,9 +79,19 @@ npx @vscode/vsce package --allow-missing-repository
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
 | `okLangHints.langDirectory` | `assets/lang` | lang JSON 目录（相对工作区根） |
+| `okLangHints.poDirectory` | `i18n` | gettext PO 目录（相对工作区根），按 `<locale>/LC_MESSAGES/*.po` 扫描 |
+| `okLangHints.enablePoData` | `true` | 是否启用 gettext PO 数据源，与 lang JSON 合并 |
+| `okLangHints.poDomains` | `["ocr"]` | 要加载的 PO domain 白名单（默认只加载 ocr，排除 ok 等 UI 文案） |
 | `okLangHints.displayLocale` | `auto` | 幽灵注释显示的语言；`auto` 跟随 VS Code UI 语言 |
 | `okLangHints.enableInlayHints` | `true` | 是否启用幽灵注释 |
 | `okLangHints.featureAliases` | `["fL", "FeatureList"]` | 模板别名列表；别名会用于模板补全和 hover 识别 |
+
+**命令**：
+
+| 命令 | 快捷键 | 说明 |
+|---|---|---|
+| `ok-script Lang Hints: 打开模板面板` | `Ctrl+Alt+T`（macOS `Cmd+Alt+T`） | 聚焦活动栏中的模板侧边栏视图 |
+| `ok-script Lang Hints: 在编辑器中打开模板面板（大窗口）` | — | 在编辑器区打开大窗口网格视图 |
 
 ### 配置示例
 
@@ -66,6 +100,8 @@ npx @vscode/vsce package --allow-missing-repository
 ```json
 {
 	"okLangHints.langDirectory": "assets/lang",
+	"okLangHints.poDirectory": "i18n",
+	"okLangHints.poDomains": ["ocr"],
 	"okLangHints.displayLocale": "zh_CN",
 	"okLangHints.enableInlayHints": true,
 	"okLangHints.featureAliases": ["fL", "FeatureList"]

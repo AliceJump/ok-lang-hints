@@ -11,8 +11,8 @@ import {
 import { FeatureData, FeatureTemplate } from './featureData';
 import { cropTemplateToDataUrlCached } from './pngCrop';
 
-/** 匹配 self.lang.<模块>.<key>（负向后视避免匹配 self.langx 之类） */
-const EXPR_RE = /(?<![\w.])self\.lang\.([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)/g;
+/** 匹配 self.lang.<模块>.<key>（支持 Unicode 标识符，如中文 OCR 文本；负向后视避免匹配 self.langx 之类） */
+const EXPR_RE = /(?<![\w.])self\.lang\.([\p{L}\p{N}_]+)\.([\p{L}\p{N}_]+)/gu;
 
 /** 转义正则特殊字符（别名可能含 . 等） */
 function escapeRegExp(s: string): string {
@@ -64,6 +64,141 @@ function findFeatureMatches(line: string): FeatureMatch[] {
   return out;
 }
 
+/* ---------------- OCR 函数 match 参数提示（参考 ok-script fix_match_regex） ---------------- */
+
+/** 带 match 参数的 OCR 函数（运行时正则会被 ocr.po 翻译修正后重新编译） */
+const OCR_CALL_RE = /(?<![\w.])self\.(ocr|wait_ocr|wait_click_ocr|find_boxes)\(/g;
+
+/** OCR match 参数引用：提取出的 pattern + 位置信息 */
+interface OcrMatchRef {
+  pattern: string;
+  isRegex: boolean;
+  start: number;
+  end: number;
+  hintEnd: number;
+}
+
+/** 从 '(' 开始提取配平的括号内容（跳过字符串字面量） */
+function extractParens(line: string, openIdx: number): { content: string; end: number } | undefined {
+  let depth = 0;
+  let inStr: string | null = null;
+  for (let i = openIdx; i < line.length; i++) {
+    const c = line[i];
+    if (inStr) {
+      if (c === '\\') {
+        i++;
+        continue;
+      }
+      if (c === inStr) inStr = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      inStr = c;
+      continue;
+    }
+    if (c === '(') depth++;
+    else if (c === ')') {
+      depth--;
+      if (depth === 0) return { content: line.slice(openIdx + 1, i), end: i };
+    }
+  }
+  return undefined;
+}
+
+/** 在参数列表内容中提取关键字参数的值（到顶层逗号或末尾），valueStart 为值在 content 中的偏移 */
+function extractKwArg(
+  content: string,
+  name: string,
+): { value: string; valueStart: number } | undefined {
+  const re = new RegExp(`(?:^|[,\\s])${name}\\s*=\\s*`);
+  const m = re.exec(content);
+  if (!m) return undefined;
+  const start = m.index + m[0].length;
+  let depth = 0;
+  let inStr: string | null = null;
+  let i = start;
+  for (; i < content.length; i++) {
+    const c = content[i];
+    if (inStr) {
+      if (c === '\\') {
+        i++;
+        continue;
+      }
+      if (c === inStr) inStr = null;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      inStr = c;
+      continue;
+    }
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') depth--;
+    else if (c === ',' && depth === 0) break;
+  }
+  const raw = content.slice(start, i);
+  const valueStart = start + (raw.length - raw.trimStart().length);
+  return { value: raw.trim(), valueStart };
+}
+
+/** Python 字符串去转义：仅处理双反斜杠；正则常见的 \d \w 等保持原样 */
+function unquotePython(s: string): string {
+  return s.replace(/\\\\/g, '\\');
+}
+
+/** 提取值中的字符串字面量（支持 r 前缀与单/双引号），返回相对值的偏移 */
+function extractStringLiterals(value: string): { text: string; offset: number }[] {
+  const out: { text: string; offset: number }[] = [];
+  const re = /r?(['"])((?:[^\\]|\\.)*?)\1/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(value)) !== null) {
+    out.push({ text: unquotePython(m[2]), offset: m.index });
+  }
+  return out;
+}
+
+/** 在一行中查找 OCR 函数 match 参数引用（支持 re.compile(...) / 字符串 / 列表） */
+export function findOcrMatchRefs(line: string): OcrMatchRef[] {
+  const out: OcrMatchRef[] = [];
+  OCR_CALL_RE.lastIndex = 0;
+  let cm: RegExpExecArray | null;
+  while ((cm = OCR_CALL_RE.exec(line)) !== null) {
+    const openIdx = cm.index + cm[0].length - 1;
+    const parens = extractParens(line, openIdx);
+    if (!parens) continue;
+    const kw = extractKwArg(parens.content, 'match');
+    if (!kw) continue;
+    const valueAbsStart = cm.index + cm[0].length + kw.valueStart;
+    const hintEnd = parens.end + 1;
+    // re.compile(...) 正则对象：hover 覆盖整个 re.compile 调用
+    const compileRe = /^re\.compile\s*\((.*)\)$/s;
+    const cmpl = compileRe.exec(kw.value);
+    if (cmpl) {
+      const lits = extractStringLiterals(cmpl[1]);
+      for (const lit of lits) {
+        out.push({
+          pattern: lit.text,
+          isRegex: true,
+          start: valueAbsStart,
+          end: valueAbsStart + kw.value.length,
+          hintEnd,
+        });
+      }
+      continue;
+    }
+    // 字符串 / 字符串列表（含 re.compile 元素）
+    for (const lit of extractStringLiterals(kw.value)) {
+      out.push({
+        pattern: lit.text,
+        isRegex: false,
+        start: valueAbsStart + lit.offset,
+        end: valueAbsStart + lit.offset + lit.text.length + 2,
+        hintEnd,
+      });
+    }
+  }
+  return out;
+}
+
 /** 当前显示的 locale（auto 跟随 UI 语言） */
 export function currentLocale(): string {
   const d = vscode.workspace.getConfiguration('okLangHints').get<string>('displayLocale') || 'auto';
@@ -81,9 +216,9 @@ function escapeCell(s: string): string {
 }
 
 /** 生成 hover / tooltip 的 Markdown：全部语言的值表格（区分 string / pattern） */
-function formatEntry(entry: LangEntry, locale: string): vscode.MarkdownString {
+function formatEntry(entry: LangEntry, locale: string, title?: string): vscode.MarkdownString {
   const md = new vscode.MarkdownString(undefined, true);
-  md.appendCodeblock(`self.lang.${entry.module}.${entry.key}`, 'python');
+  md.appendCodeblock(title ?? `self.lang.${entry.module}.${entry.key}`, 'python');
   const rows = LOCALE_ORDER.map((l) => {
     const node = entry.locales[l];
     const v = nodeValue(node);
@@ -157,6 +292,19 @@ export class LangInlayHintsProvider implements vscode.InlayHintsProvider {
         hint.tooltip = formatEntry(entry, locale);
         hints.push(hint);
       }
+      // OCR 函数的 match 正则：运行时会被 ocr.po 翻译修正，行尾提示翻译结果
+      for (const om of findOcrMatchRefs(text)) {
+        const entry = this.data.poEntry('ocr', om.pattern);
+        if (!entry) continue;
+        const picked = pickEntry(entry, locale);
+        if (picked.value === undefined) continue;
+        const hint = new vscode.InlayHint(
+          new vscode.Position(line, om.hintEnd),
+          `→ ${picked.value}`,
+        );
+        hint.tooltip = formatEntry(entry, locale, `match=re.compile(r"${om.pattern}")`);
+        hints.push(hint);
+      }
     }
     return hints;
   }
@@ -184,6 +332,16 @@ export class LangHoverProvider implements vscode.HoverProvider {
         if (ft) return new vscode.Hover(formatFeature(ft));
       }
     }
+    // OCR 函数的 match 正则：hover 显示 ocr.po 中的修正映射
+    for (const om of findOcrMatchRefs(line)) {
+      if (position.character >= om.start && position.character <= om.end) {
+        const entry = this.data.poEntry('ocr', om.pattern);
+        if (!entry) continue;
+        const md = formatEntry(entry, currentLocale(), `match=re.compile(r"${om.pattern}")`);
+        md.appendMarkdown('\n\n> 运行时 `fix_match_regex` 会用 `ocr.po` 翻译该正则后再 `re.compile`。');
+        return new vscode.Hover(md);
+      }
+    }
     return undefined;
   }
 }
@@ -199,6 +357,23 @@ export class LangCompletionProvider implements vscode.CompletionItemProvider {
     _context: vscode.CompletionContext,
   ): vscode.CompletionItem[] | undefined {
     const before = document.lineAt(position.line).text.slice(0, position.character);
+
+    // OCR 函数的 match 正则补全：在 re.compile(" 或 match=" 的引号内补全 ocr.po 的 key
+    const ocrMatchRe =
+      /self\.(ocr|wait_ocr|wait_click_ocr|find_boxes)\([^)]*?(?:re\.compile\s*\(\s*|match\s*=\s*)r?['"]$/;
+    if (ocrMatchRe.test(before)) {
+      const locale = currentLocale();
+      return this.data.poKeys('ocr').map((k) => {
+        const entry = this.data.poEntry('ocr', k);
+        const item = new vscode.CompletionItem(k, vscode.CompletionItemKind.Value);
+        if (entry) {
+          const picked = pickEntry(entry, locale);
+          if (picked?.value !== undefined) item.detail = `→ ${picked.value}`;
+          item.documentation = formatEntry(entry, locale, `match=re.compile(r"${k}")`);
+        }
+        return item;
+      });
+    }
 
     // 别名. -> 补全模板名（如 fL. / FeatureList.；缩略图懒加载）
     // 使用极小 sortText，并默认选中模板项；Pylance 的同名枚举项仍保留在列表中。
@@ -219,7 +394,7 @@ export class LangCompletionProvider implements vscode.CompletionItemProvider {
     }
 
     // self.lang.<模块>.  -> 补全 key
-    const keyMatch = /(?<![\w.])self\.lang\.([A-Za-z0-9_]+)\.$/.exec(before);
+    const keyMatch = /(?<![\w.])self\.lang\.([\p{L}\p{N}_]+)\.$/u.exec(before);
     if (keyMatch) {
       const module = keyMatch[1];
       const locale = currentLocale();
