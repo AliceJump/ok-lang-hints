@@ -27,6 +27,7 @@ interface TaskListResult {
 function parseConfigTasks(projectDir: string, pythonPath: string): TaskListResult {
   const script = String.raw`
 import ast, json, os, sys
+project_dir = ${JSON.stringify(projectDir)}
 
 def extract_tasks(src_path):
     with open(src_path, encoding='utf-8') as f:
