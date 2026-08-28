@@ -119,6 +119,9 @@ function buildRunArgs(taskClassName: string, configModule: string): string[] {
   // 用 python -c 直接调用 ok.run_task，避免依赖项目内 .venv 的 console script
   const code = [
     'import sys',
+    // 强制 stdout/stderr 用 UTF-8 输出，避免 Windows 控制台 GBK 编码导致 Node 端乱码
+    "sys.stdout.reconfigure(encoding='utf-8')",
+    "sys.stderr.reconfigure(encoding='utf-8')",
     'sys.path.insert(0, ".")',
     'from ok import run_task',
     `from ${configModule} import config`,
@@ -142,6 +145,8 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
   private running = false;
   private currentTask: TaskInfo | undefined;
   private configModule = 'src.config';
+  private childProcess: cp.ChildProcess | null = null;
+  private view: vscode.WebviewView | null = null;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -149,13 +154,14 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     this.output = vscode.window.createOutputChannel('ok-script 任务启动');
   }
 
-  resolveWebviewView(view: vscode.WebviewView): void {
+resolveWebviewView(view: vscode.WebviewView): void {
+    this.view = view;
     view.webview.options = {
       enableScripts: true,
     };
     view.webview.html = this.buildHtml();
 
-    view.webview.onDidReceiveMessage(async (msg) => {
+view.webview.onDidReceiveMessage(async (msg) => {
       switch (msg.type) {
         case 'ready':
           await this.refreshTasks(view);
@@ -165,6 +171,9 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
           break;
         case 'launch':
           await this.launchTask(view, msg.task);
+          break;
+        case 'stop':
+          await this.stopTask();
           break;
       }
     });
@@ -263,26 +272,95 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     void view.webview.postMessage({ type: 'running', task, running: true });
 
     const args = buildRunArgs(task.className, this.configModule);
-    const child = cp.spawn(pythonPath, args, {
+    this.childProcess = cp.spawn(pythonPath, args, {
       cwd: projectDir,
       windowsHide: true,
-      env: { ...process.env },
+      // 强制子进程以 UTF-8 编码输出，与 Python 端 reconfigure 配合彻底解决乱码
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
     });
-    child.stdout?.on('data', (d) => this.output.append(d.toString()));
-    child.stderr?.on('data', (d) => this.output.append(d.toString()));
-    child.on('error', (err) => {
+    this.childProcess.stdout?.on('data', (d) => this.output.append(d.toString('utf8')));
+    this.childProcess.stderr?.on('data', (d) => this.output.append(d.toString('utf8')));
+    this.childProcess.on('error', (err) => {
       this.running = false;
+      this.childProcess = null;
       this.output.appendLine('');
       this.output.appendLine(`❌ 无法启动 Python 进程: ${err.message}`);
       void vscode.window.showErrorMessage(`无法启动任务: ${err.message}`);
       void view.webview.postMessage({ type: 'running', task, running: false, error: err.message });
     });
-    child.on('close', (code) => {
+    this.childProcess.on('close', (code) => {
       this.running = false;
+      this.childProcess = null;
       this.output.appendLine('');
       this.output.appendLine(code === 0 ? '✅ 任务完成' : `❌ 任务退出码: ${code}`);
       void view.webview.postMessage({ type: 'running', task, running: false, code });
     });
+  }
+
+  private async stopTask(): Promise<void> {
+    if (!this.running || !this.childProcess || !this.view) {
+      void vscode.window.showWarningMessage('没有正在运行的任务。');
+      return;
+    }
+    
+    this.output.appendLine('');
+    this.output.appendLine('⏹ 正在停止任务...');
+    void this.view.webview.postMessage({ type: 'running', task: this.currentTask, running: false, stopping: true });
+    
+    // 尝试优雅终止
+    try {
+      if (process.platform === 'win32') {
+        // Windows: 使用 taskkill
+        const pid = this.childProcess.pid;
+        if (!pid) {
+          throw new Error('无法获取进程 PID');
+        }
+        const taskkill = cp.spawnSync('taskkill', ['/F', '/T', '/PID', pid.toString()], {
+          windowsHide: true,
+          env: process.env
+        });
+        if (taskkill.error) {
+          throw taskkill.error;
+        }
+      } else {
+        // Unix-like: 发送 SIGTERM
+        this.childProcess.kill('SIGTERM');
+      }
+      
+      // 等待子进程终止
+      const timeout = setTimeout(() => {
+        if (this.childProcess && !this.childProcess.killed) {
+          // 超时后强制终止
+          if (process.platform === 'win32') {
+            const fallbackPid = this.childProcess?.pid;
+            if (fallbackPid) {
+              cp.spawnSync('taskkill', ['/F', '/T', '/PID', fallbackPid.toString()], {
+                windowsHide: true,
+                env: process.env
+              });
+            }
+          } else {
+            this.childProcess.kill('SIGKILL');
+          }
+        }
+      }, 5000);
+      
+      this.childProcess.on('close', () => {
+        clearTimeout(timeout);
+        this.running = false;
+        this.childProcess = null;
+        this.output.appendLine('⏹ 任务已停止');
+        void vscode.window.showInformationMessage('任务已停止');
+        void this.view!.webview.postMessage({ type: 'running', task: this.currentTask, running: false, stopped: true });
+      });
+      
+    } catch (err) {
+      this.running = false;
+      this.childProcess = null;
+      this.output.appendLine(`❌ 停止任务失败: ${err instanceof Error ? err.message : String(err)}`);
+      void vscode.window.showErrorMessage(`停止任务失败: ${err instanceof Error ? err.message : String(err)}`);
+      void this.view!.webview.postMessage({ type: 'running', task: this.currentTask, running: false, error: `停止失败: ${err instanceof Error ? err.message : String(err)}` });
+    }
   }
 
   /** 释放资源（output channel 由扩展生命周期统一关闭） */
@@ -338,6 +416,13 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     width: 100%;
   }
   .task .launch-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .task .stop-btn {
+    margin-top: 6px;
+    width: 100%;
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+  }
+  .task .stop-btn:disabled { opacity: .5; cursor: not-allowed; }
   .status { margin-top: 8px; padding: 6px 8px; border-radius: 4px; font-size: 12px; }
   .status.warn { background: var(--vscode-inputValidation-warningBackground, rgba(255,193,7,.15)); }
   .status.error { background: var(--vscode-inputValidation-errorBackground, rgba(255,0,0,.15)); }
@@ -380,19 +465,30 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
       const cl = document.createElement('div');
       cl.className = 'cls';
       cl.textContent = t.className;
-      const btn = document.createElement('button');
-      btn.className = 'launch-btn';
-      btn.textContent = '▶ 启动';
-      btn.dataset.module = t.module;
-      btn.dataset.cls = t.className;
-      btn.dataset.name = t.displayName;
-      btn.addEventListener('click', () => {
+      const launchBtn = document.createElement('button');
+      launchBtn.className = 'launch-btn';
+      launchBtn.textContent = '▶ 启动';
+      launchBtn.dataset.module = t.module;
+      launchBtn.dataset.cls = t.className;
+      launchBtn.dataset.name = t.displayName;
+      launchBtn.addEventListener('click', () => {
         if (running) return;
         vscode.postMessage({ type: 'launch', task: { module: t.module, className: t.className, displayName: t.displayName } });
       });
+      const stopBtn = document.createElement('button');
+      stopBtn.className = 'stop-btn';
+      stopBtn.textContent = '⏹ 停止';
+      stopBtn.dataset.module = t.module;
+      stopBtn.dataset.cls = t.className;
+      stopBtn.dataset.name = t.displayName;
+      stopBtn.addEventListener('click', () => {
+        if (!running) return;
+        vscode.postMessage({ type: 'stop', task: { module: t.module, className: t.className, displayName: t.displayName } });
+      });
       card.appendChild(nm);
       card.appendChild(cl);
-      card.appendChild(btn);
+      card.appendChild(launchBtn);
+      card.appendChild(stopBtn);
       tasksEl.appendChild(card);
     }
   }
@@ -402,6 +498,10 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     for (const b of tasksEl.querySelectorAll('.launch-btn')) {
       b.disabled = r;
       b.textContent = r ? '⏳ 运行中…' : '▶ 启动';
+    }
+    for (const b of tasksEl.querySelectorAll('.stop-btn')) {
+      b.disabled = !r;
+      b.textContent = r ? '⏹ 停止' : '⏹ 停止';
     }
   }
 
