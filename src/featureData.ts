@@ -119,8 +119,10 @@ interface LabelmeShape {
 
 interface LabelmeIndex {
   builtAt: number;
-  /** `${label}|${x},${y}` → 原图绝对路径 */
+  /** `${label}|${x},${y}` → 原图绝对路径（精确坐标匹配） */
   byKey: Map<string, string>;
+  /** label → 原图绝对路径（按模板名直接匹配，无坐标歧义时使用） */
+  byName: Map<string, string>;
 }
 
 const labelmeIndexes = new Map<string, LabelmeIndex>();
@@ -128,6 +130,7 @@ const LABELME_TTL_MS = 30_000;
 
 function buildLabelmeIndex(rootDir: string): LabelmeIndex {
   const byKey = new Map<string, string>();
+  const byName = new Map<string, string>();
   const dirs = [
     path.join(rootDir, 'ok_templates'),
     path.join(rootDir, 'ok_tasks', 'ok_templates'),
@@ -156,13 +159,15 @@ function buildLabelmeIndex(rootDir: string): LabelmeIndex {
           const x = Math.round(Math.min(...xs));
           const y = Math.round(Math.min(...ys));
           byKey.set(`${s.label}|${x},${y}`, pngPath);
+          // 按模板名索引：每个模板名在 labelme 中只出现一次（无多图歧义）
+          if (!byName.has(s.label)) byName.set(s.label, pngPath);
         }
       } catch {
         // 坏文件跳过
       }
     }
   }
-  return { builtAt: Date.now(), byKey };
+  return { builtAt: Date.now(), byKey, byName };
 }
 
 function getLabelmeIndex(rootDir: string): LabelmeIndex {
@@ -175,7 +180,10 @@ function getLabelmeIndex(rootDir: string): LabelmeIndex {
 
 /**
  * 按「模板名 + bbox 左上角」反查 ok_templates 中的原始截图。
- * 精确匹配失败时，若该模板名只出现在一张原图中则使用它；找不到返回 undefined。
+ * 查找优先级：
+ *   1. 精确坐标匹配（`label|x,y`）
+ *   2. 模板名直接匹配（每个模板在 labelme 中只出现一次，无歧义）
+ *   3. 遍历所有坐标 key 找同名片段（兼容边界情况）
  */
 export function findOkTemplateOriginal(
   rootDir: string,
@@ -184,8 +192,13 @@ export function findOkTemplateOriginal(
 ): string | undefined {
   if (!rootDir) return undefined;
   const idx = getLabelmeIndex(rootDir);
+  // 1. 精确坐标匹配
   const exact = idx.byKey.get(`${name}|${bbox[0]},${bbox[1]}`);
   if (exact) return exact;
+  // 2. 模板名直接匹配（最可靠，每个模板只出现在一张截图中）
+  const byName = idx.byName.get(name);
+  if (byName) return byName;
+  // 3. 兜底：遍历所有 key 找同名片段
   const hits = new Set<string>();
   for (const [k, v] of idx.byKey) {
     if (k.startsWith(`${name}|`)) hits.add(v);

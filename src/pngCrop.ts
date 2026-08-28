@@ -175,7 +175,8 @@ function encodePng(width: number, height: number, rgba: Buffer): Buffer {
   ihdr[10] = 0;
   ihdr[11] = 0;
   ihdr[12] = 0;
-  const idat = zlib.deflateSync(raw, { level: 6 });
+  // 使用 level 1 换取更快的编码速度（缩略图/标注图不需要极高压缩率）
+  const idat = zlib.deflateSync(raw, { level: 1 });
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', ihdr),
@@ -452,6 +453,7 @@ function drawRectOutline(
 
 /**
  * 解码原图、在 bbox 处画红框标注并写出 PNG。
+ * 优化：只裁剪 bbox 周围区域（含 200px 边距）并编码，而非全图，大幅提速。
  * 返回输出文件路径；失败返回 undefined。
  */
 export function writeAnnotatedImage(
@@ -468,11 +470,29 @@ export function writeAnnotatedImage(
       Math.max(1, Math.min(bbox[2], width - Math.max(0, bbox[0]))),
       Math.max(1, Math.min(bbox[3], height - Math.max(0, bbox[1]))),
     ];
+    // 围绕 bbox 裁剪区域，含 200px 边距（不超出图片边界）
+    const pad = 200;
+    const cropX = Math.max(0, bx - pad);
+    const cropY = Math.max(0, by - pad);
+    const cropW = Math.min(width - cropX, bw + 2 * pad + Math.min(pad, bx));
+    const cropH = Math.min(height - cropY, bh + 2 * pad + Math.min(pad, by));
+
+    // 裁剪像素区域
+    const cropRgba = Buffer.alloc(cropW * cropH * 4);
+    for (let y = 0; y < cropH; y++) {
+      const srcStart = ((cropY + y) * width + cropX) * 4;
+      rgba.copy(cropRgba, y * cropW * 4, srcStart, srcStart + cropW * 4);
+    }
+
+    // 在裁剪区域中画标注框（坐标需要相对偏移）
+    const relX = bx - cropX;
+    const relY = by - cropY;
     const thickness = Math.max(3, Math.min(10, Math.round(Math.min(width, height) * 0.004)));
-    drawRectOutline(rgba, width, height, bx, by, bw, bh, thickness);
+    drawRectOutline(cropRgba, cropW, cropH, relX, relY, bw, bh, thickness);
+
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
-    // 大图用低压缩级别换取生成速度
-    fs.writeFileSync(outPath, encodePng(width, height, rgba));
+    // 用低压缩级别换取生成速度（标注图不需要极高压缩率）
+    fs.writeFileSync(outPath, encodePng(cropW, cropH, cropRgba));
     return outPath;
   } catch {
     return undefined;
@@ -483,9 +503,10 @@ export function writeAnnotatedImage(
  * 生成（带缓存）"原始截图 + bbox 红框标注" 的 PNG，返回文件路径。
  * 原图来源按优先级：
  *   1. ok_templates 反查（labelme json 按模板名+坐标匹配，最准确）
- *   2. assets 同级 ok_templates 同名文件（编号恰好一致时）
- *   3. coco 引用的 assets/images 副本兜底
+ *   2. coco 引用的 assets/images 副本兜底（可能非原始分辨率，但内容正确）
  * 同一来源同一 bbox 只生成一次。
+ * 注：已移除 resolveOriginalImagePath 的简单编号映射，因 assets/images 与
+ * ok_templates 的编号不对应，会导致找到错误的图片。
  */
 export function openAnnotatedImage(
   imagePath: string,
@@ -497,8 +518,6 @@ export function openAnnotatedImage(
   const candidates: string[] = [];
   const viaLabelme = findOkTemplateOriginal(rootDir, name, bbox);
   if (viaLabelme) candidates.push(viaLabelme);
-  const viaSibling = resolveOriginalImagePath(imagePath);
-  if (!candidates.includes(viaSibling)) candidates.push(viaSibling);
   if (!candidates.includes(imagePath)) candidates.push(imagePath);
 
   for (const src of candidates) {

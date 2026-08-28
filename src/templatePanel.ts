@@ -359,6 +359,7 @@ function galleryHtml(cspSource: string): string {
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
     background:
       repeating-conic-gradient(rgba(128,128,128,.14) 0% 25%, transparent 0% 50%) 0 0/16px 16px;
   }
@@ -366,9 +367,28 @@ function galleryHtml(cspSource: string): string {
     max-width: 100%;
     max-height: 100%;
     image-rendering: pixelated;
-    /* 注意：不要在这里写 display:none —— 内联 style.display='' 无法覆盖样式表规则，
-       会导致图片加载成功却永远不可见。隐藏改用内联样式控制（见 attachThumb）。 */
   }
+  .open-btn {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    background: rgba(0,0,0,.55);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 22px;
+    text-align: center;
+    padding: 0;
+    opacity: 0;
+    transition: opacity .12s ease;
+    z-index: 2;
+  }
+  .thumb-box:hover .open-btn { opacity: 1; }
+  .open-btn:hover { background: rgba(0,0,0,.8); }
   .placeholder { opacity: .35; font-size: 11px; }
   .meta { padding: 5px 7px 6px; }
   .name {
@@ -393,7 +413,7 @@ function galleryHtml(cspSource: string): string {
   <div class="toolbar">
     <input id="search" type="text" placeholder="搜索模板名…" />
     <span id="count"></span>
-    <span class="hint">单击=插入到代码 · 双击=复制 · 点缩略图=查看原图（红框标注位置）</span>
+    <span class="hint">单击=插入到代码 · 双击=复制 · 悬停缩略图点👁=查看原图（红框标注位置）</span>
   </div>
   <div id="grid"></div>
   <div id="empty" class="empty" style="display:none"></div>
@@ -436,6 +456,22 @@ function galleryHtml(cspSource: string): string {
     ph.textContent = '…';
     box.appendChild(ph);
 
+    // 缩略图右上角"查看原图"按钮（悬停显示，不干扰卡片点击）
+    const openBtn = document.createElement('button');
+    openBtn.className = 'open-btn';
+    openBtn.textContent = '👁';
+    openBtn.title = '查看原图（红框标注位置）';
+    openBtn.addEventListener('click', (e) => {
+      e.stopPropagation(); // 不触发卡片的 click
+      vscode.postMessage({
+        type: 'open',
+        imagePath: meta.imagePath,
+        name: meta.name,
+        bbox: JSON.stringify(meta.bbox),
+      });
+    });
+    box.appendChild(openBtn);
+
     const m = document.createElement('div');
     m.className = 'meta';
     const nm = document.createElement('div');
@@ -451,27 +487,14 @@ function galleryHtml(cspSource: string): string {
     card.appendChild(box);
     card.appendChild(m);
 
-    let clickTimer = null;
-    card.addEventListener('click', () => {
-      // 延迟区分单击（插入）与双击（复制），避免双击误触发两次插入
-      if (clickTimer) return;
-      clickTimer = setTimeout(() => {
-        clickTimer = null;
-        vscode.postMessage({ type: 'insert', text: meta.name });
-      }, 250);
+    // 单击卡片 → 插入代码；双击卡片 → 复制
+    // 使用 e.detail 区分：第二次点击（detail=2）时跳过，由 dblclick 处理
+    card.addEventListener('click', (e) => {
+      if (e.detail >= 2) return; // 双击序列中的第二次点击，跳过（由 dblclick 处理）
+      vscode.postMessage({ type: 'insert', text: meta.name });
     });
     card.addEventListener('dblclick', () => {
-      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
       vscode.postMessage({ type: 'copy', text: meta.name });
-    });
-    box.addEventListener('click', (e) => {
-      e.stopPropagation();
-      vscode.postMessage({
-        type: 'open',
-        imagePath: meta.imagePath,
-        name: meta.name,
-        bbox: JSON.stringify(meta.bbox),
-      });
     });
     return card;
   }
