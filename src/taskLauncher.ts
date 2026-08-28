@@ -122,6 +122,11 @@ function buildRunArgs(taskClassName: string, configModule: string): string[] {
     'sys.path.insert(0, ".")',
     'from ok import run_task',
     `from ${configModule} import config`,
+    // 过滤任务注册表：只保留目标任务，避免 TaskManager 加载其他
+    // 有导入问题的任务（如 ok-end-field 的 characters 包问题）导致整体失败
+    'config = dict(config)',
+    `config['onetime_tasks'] = [t for t in config.get('onetime_tasks', []) if t[1] == ${JSON.stringify(taskClassName)}]`,
+    "config['trigger_tasks'] = []",
     `run_task(config, task=${JSON.stringify(taskClassName)})`,
   ].join('; ');
   return ['-c', code];
