@@ -124,9 +124,11 @@ function buildRunArgs(taskClassName: string, configModule: string): string[] {
     `from ${configModule} import config`,
     // 过滤任务注册表：只保留目标任务，避免 TaskManager 加载其他
     // 有导入问题的任务（如 ok-end-field 的 characters 包问题）导致整体失败
+    // 注意：不能直接把 trigger_tasks 清空——若目标任务本身是 trigger 任务，
+    // OK.get_task 会先查 onetime_tasks 再查 trigger_tasks，清空会导致找不到。
     'config = dict(config)',
     `config['onetime_tasks'] = [t for t in config.get('onetime_tasks', []) if t[1] == ${JSON.stringify(taskClassName)}]`,
-    "config['trigger_tasks'] = []",
+    `config['trigger_tasks'] = [t for t in config.get('trigger_tasks', []) if t[1] == ${JSON.stringify(taskClassName)}]`,
     `run_task(config, task=${JSON.stringify(taskClassName)})`,
   ].join('; ');
   return ['-c', code];
