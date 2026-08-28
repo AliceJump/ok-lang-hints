@@ -13,6 +13,7 @@ import {
   TemplateGalleryViewProvider,
   repaintAllGalleries,
 } from './templatePanel';
+import { TaskLauncherViewProvider } from './taskLauncher';
 
 export function activate(context: vscode.ExtensionContext): void {
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -68,6 +69,9 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   context.subscriptions.push(recreateWatcher());
 
+  const taskLauncher = new TaskLauncherViewProvider(context.extensionUri);
+  context.subscriptions.push(taskLauncher);
+
   context.subscriptions.push(
     vscode.languages.registerInlayHintsProvider(
       { language: 'python', scheme: 'file' },
@@ -86,12 +90,20 @@ export function activate(context: vscode.ExtensionContext): void {
       TemplateGalleryViewProvider.viewType,
       new TemplateGalleryViewProvider(features, thumbDir),
     ),
+    vscode.window.registerWebviewViewProvider(
+      TaskLauncherViewProvider.viewType,
+      taskLauncher,
+    ),
     vscode.commands.registerCommand('okLangHints.showTemplates', () => {
       // 聚焦活动栏中的模板视图（左侧图标 Tab）
       void vscode.commands.executeCommand(`${TemplateGalleryViewProvider.viewType}.focus`);
     }),
     vscode.commands.registerCommand('okLangHints.openTemplatesEditor', () => {
       TemplateGalleryPanel.show(features, thumbDir);
+    }),
+    vscode.commands.registerCommand('okLangHints.showTaskLauncher', () => {
+      // 聚焦活动栏中的任务启动视图
+      void vscode.commands.executeCommand(`${TaskLauncherViewProvider.viewType}.focus`);
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('okLangHints')) {

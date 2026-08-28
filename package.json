@@ -34,7 +34,8 @@
   ],
   "activationEvents": [
     "onLanguage:python",
-    "onView:okLangHints.templateGallery"
+    "onView:okLangHints.templateGallery",
+    "onView:okLangHints.taskLauncher"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -47,6 +48,11 @@
       {
         "command": "okLangHints.openTemplatesEditor",
         "title": "在编辑器中打开模板面板（大窗口）",
+        "category": "ok-script Lang Hints"
+      },
+      {
+        "command": "okLangHints.showTaskLauncher",
+        "title": "打开任务启动",
         "category": "ok-script Lang Hints"
       }
     ],
@@ -65,6 +71,14 @@
           "type": "webview",
           "id": "okLangHints.templateGallery",
           "name": "模板面板",
+          "webviewOptions": {
+            "retainContextWhenHidden": true
+          }
+        },
+        {
+          "type": "webview",
+          "id": "okLangHints.taskLauncher",
+          "name": "任务启动",
           "webviewOptions": {
             "retainContextWhenHidden": true
           }
@@ -136,6 +150,16 @@
             "FeatureList"
           ],
           "description": "FeatureList 模板的可用别名（补全和 hover 均按此识别）。默认支持 fL 与 FeatureList；例如 [\"fL\", \"FeatureList\"]。"
+        },
+        "okLangHints.okScriptProjectPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "ok-script 游戏项目根目录（含 src/config.py 的目录），如 `D:/items/project/github_project/ok-end-field`。任务启动面板从该项目的 `src/config.py` 读取任务列表。"
+        },
+        "okLangHints.okScriptPython": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "用于运行 ok-script 任务的 Python 解释器路径。留空时自动使用 `<项目路径>/.venv/Scripts/python.exe`（Windows）。"
         }
       }
     }
