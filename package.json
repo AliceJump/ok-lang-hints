@@ -34,6 +34,8 @@
   ],
   "activationEvents": [
     "onLanguage:python",
+    "onLanguage:json",
+    "onLanguage:jsonc",
     "onView:okLangHints.templateGallery",
     "onView:okLangHints.taskLauncher"
   ],
@@ -150,6 +152,11 @@
             "FeatureList"
           ],
           "description": "FeatureList 模板的可用别名（补全和 hover 均按此识别）。默认支持 fL 与 FeatureList；例如 [\"fL\", \"FeatureList\"]。"
+        },
+        "okLangHints.effectsFile": {
+          "type": "string",
+          "default": "src/data/effects.py",
+          "description": "技能效果 ID 定义文件（含 EffectType 枚举与 EFFECT_DESCRIPTIONS 的 effects.py，相对于工作区根目录）。用于 EffectType.XXX / effect_id: \"XXX\" 的 hover、补全与幽灵注释。"
         },
         "okLangHints.okScriptProjectPath": {
           "type": "string",

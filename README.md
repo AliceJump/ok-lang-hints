@@ -18,6 +18,16 @@
 - 行内显示修正后的值：如 `match=re.compile(r"体力.*")` 后显示幽灵注释 `→ 体力[0-9]+`。
 - 在 `re.compile(r"` 或 `match="` 的引号内输入，可补全 `ocr.po` 中的 key（含自动生成的去空格副本）。
 
+### 技能效果 ID（`EffectType.XXX` / `"effect_id": "XXX"`）
+
+针对《明日方舟：终末地》技能数据库（`src/data/effects.py` 的 `EffectType` 枚举与 `EFFECT_DESCRIPTIONS`），提供效果 ID 的中文描述提示：
+
+- **hover**：悬停 `EffectType.XXX` 或字符串字面量 `"XXX"`（如 `"effect_id": "ATTACH_COLD"`），显示效果 ID、分类与中文描述。
+- **幽灵注释**：在 `EffectType.XXX` 或 `"effect_id": "XXX"` 之后行内显示中文描述，如 `「敌人被施加寒冷元素」`。
+- **补全**：在 `effect_id: "` 或 `effect: "` 的引号内输入，补全全部效果 ID，详情显示 `[分类] 描述`。
+- 数据从 `src/data/effects.py` 实时解析（按 mtime 增量刷新），`EffectType` 成员与 `EFFECT_DESCRIPTIONS` 中的描述自动对齐，无需手动维护。
+- 自动排除 `self.lang.*` 与 OCR `match=re.compile(...)` 等字符串场景，避免误报。
+
 ### `fL` / `FeatureList` 模板
 
 - 输入 `fL.` 或 `FeatureList.`：补全 COCO 标注中的模板名称。
@@ -54,8 +64,9 @@
 - `assets/coco_annotations.json`：模板名称、原图和 `bbox`。
 - `assets/images/*.png`：模板预览使用的原图。
 - 如果存在，也会读取 `ok_tasks/assets/coco_annotations.json` 与 `ok_tasks/assets/images/*.png`。
+- `src/data/effects.py`：技能效果 ID 数据源（`EffectType` 枚举 + `EFFECT_DESCRIPTIONS` 中文描述），用于 `EffectType.XXX` / `"effect_id": "XXX"` 的提示。
 
-保存 JSON、COCO 标注或 PNG 后，扩展会自动刷新，无需重启项目。
+保存 JSON、COCO 标注、PNG 或 `effects.py` 后，扩展会自动刷新，无需重启项目。
 
 ## 安装
 
@@ -85,6 +96,7 @@ npx @vscode/vsce package --allow-missing-repository
 | `okLangHints.displayLocale` | `auto` | 幽灵注释显示的语言；`auto` 跟随 VS Code UI 语言 |
 | `okLangHints.enableInlayHints` | `true` | 是否启用幽灵注释 |
 | `okLangHints.featureAliases` | `["fL", "FeatureList"]` | 模板别名列表；别名会用于模板补全和 hover 识别 |
+| `okLangHints.effectsFile` | `src/data/effects.py` | 技能效果 ID 定义文件（`EffectType` 枚举与 `EFFECT_DESCRIPTIONS`），相对工作区根目录 |
 
 **命令**：
 
