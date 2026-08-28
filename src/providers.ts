@@ -9,6 +9,7 @@ import {
   pickEntry,
 } from './langData';
 import { FeatureData, FeatureTemplate } from './featureData';
+import { EffectData, EffectEntry } from './effectData';
 import { cropTemplateToDataUrlCached } from './pngCrop';
 
 /** 匹配 self.lang.<模块>.<key>（支持 Unicode 标识符，如中文 OCR 文本；负向后视避免匹配 self.langx 之类） */
@@ -62,6 +63,58 @@ function findFeatureMatches(line: string): FeatureMatch[] {
     out.push({ name: m[2], start: m.index, end: m.index + m[0].length });
   }
   return out;
+}
+
+/* ---------------- 技能效果 ID 提示（EffectType.XXX / "effect_id": "XXX"） ---------------- */
+
+/** 效果 ID 引用：EffectType.成员名 或 字符串字面量（effect_id / effect 键值） */
+interface EffectRef {
+  id: string;
+  start: number;
+  end: number;
+}
+
+/** 匹配 EffectType.成员名（成员名为大写字母/数字/下划线） */
+const EFFECT_TYPE_REF_RE = /\bEffectType\.([A-Z][A-Z0-9_]*)/g;
+
+/** 匹配字符串字面量中的效果 ID（大写字母/数字/下划线，长度>=3），用于 effect_id: "XXX" / "effect": "XXX" 等键 */
+const EFFECT_STR_RE = /r?['"]([A-Z][A-Z0-9_]{2,})['"]/g;
+
+/** 在单行中查找所有效果 ID 引用（枚举访问 + 字符串字面量） */
+export function findEffectRefs(line: string): EffectRef[] {
+  const out: EffectRef[] = [];
+  // 1) EffectType.XXX 枚举访问（需确认该成员存在于效果数据中再提示）
+  EFFECT_TYPE_REF_RE.lastIndex = 0;
+  let em: RegExpExecArray | null;
+  while ((em = EFFECT_TYPE_REF_RE.exec(line)) !== null) {
+    out.push({ id: em[1], start: em.index, end: em.index + em[0].length });
+  }
+  // 2) 字符串字面量 "XXX"（如 effect_id: "ATTACH_COLD"、effects: ["ATTACH_COLD"]）
+  //    排除 self.lang 与 .po 相关的字符串（它们也会被本正则命中）
+  EFFECT_STR_RE.lastIndex = 0;
+  let sm: RegExpExecArray | null;
+  while ((sm = EFFECT_STR_RE.exec(line)) !== null) {
+    const before = line.slice(Math.max(0, sm.index - 40), sm.index);
+    // 跳过 self.lang.xxx、match=、re.compile( 等场景
+    if (/self\.lang\.|match\s*=|re\.compile\s*\(/.test(before)) continue;
+    out.push({ id: sm[1], start: sm.index, end: sm.index + sm[0].length });
+  }
+  return out;
+}
+
+/** 生成效果条目的 Markdown：ID + 分类 + 描述 */
+export function formatEffect(entry: EffectEntry): vscode.MarkdownString {
+  const md = new vscode.MarkdownString(undefined, true);
+  md.appendCodeblock(entry.id, 'python');
+  md.appendMarkdown(
+    `\n- 分类: \`${entry.category}\`` + `\n- 描述: ${entry.description}`,
+  );
+  return md;
+}
+
+/** 生成幽灵注释标签：效果 ID 显示描述 */
+export function effectHintLabel(entry: EffectEntry): string {
+  return `「${entry.description}」`;
 }
 
 /* ---------------- OCR 函数 match 参数提示（参考 ok-script fix_match_regex） ---------------- */
@@ -261,7 +314,11 @@ export class LangInlayHintsProvider implements vscode.InlayHintsProvider {
   private _emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeInlayHints = this._emitter.event;
 
-  constructor(private data: LangData, private features: FeatureData) {}
+  constructor(
+    private data: LangData,
+    private features: FeatureData,
+    private effects?: EffectData,
+  ) {}
 
   fire(): void {
     this._emitter.fire();
@@ -305,14 +362,31 @@ export class LangInlayHintsProvider implements vscode.InlayHintsProvider {
         hint.tooltip = formatEntry(entry, locale, `match=re.compile(r"${om.pattern}")`);
         hints.push(hint);
       }
+      // 技能效果 ID：EffectType.XXX 或 "effect_id": "XXX" 后显示中文描述
+      if (this.effects) {
+        for (const ef of findEffectRefs(text)) {
+          const entry = this.effects.entry(ef.id);
+          if (!entry) continue;
+          const hint = new vscode.InlayHint(
+            new vscode.Position(line, ef.end),
+            effectHintLabel(entry),
+          );
+          hint.tooltip = formatEffect(entry);
+          hints.push(hint);
+        }
+      }
     }
     return hints;
   }
 }
 
-/** 悬浮提示：显示该 key 的全部语言值 / feature 模板预览 */
+/** 悬浮提示：显示该 key 的全部语言值 / feature 模板预览 / 效果 ID 描述 */
 export class LangHoverProvider implements vscode.HoverProvider {
-  constructor(private data: LangData, private features: FeatureData) {}
+  constructor(
+    private data: LangData,
+    private features: FeatureData,
+    private effects?: EffectData,
+  ) {}
 
   provideHover(
     document: vscode.TextDocument,
@@ -342,13 +416,26 @@ export class LangHoverProvider implements vscode.HoverProvider {
         return new vscode.Hover(md);
       }
     }
+    // 技能效果 ID：hover 显示 ID 分类与中文描述
+    if (this.effects) {
+      for (const ef of findEffectRefs(line)) {
+        if (position.character >= ef.start && position.character <= ef.end) {
+          const entry = this.effects.entry(ef.id);
+          if (entry) return new vscode.Hover(formatEffect(entry));
+        }
+      }
+    }
     return undefined;
   }
 }
 
-/** 自动补全：self.lang. -> 模块；self.lang.<模块>. -> key（带值预览）；别名. -> 模板名。 */
+/** 自动补全：self.lang. -> 模块；self.lang.<模块>. -> key（带值预览）；别名. -> 模板名；effect_id: " -> 效果 ID。 */
 export class LangCompletionProvider implements vscode.CompletionItemProvider {
-  constructor(private data: LangData, private features: FeatureData) {}
+  constructor(
+    private data: LangData,
+    private features: FeatureData,
+    private effects?: EffectData,
+  ) {}
 
   provideCompletionItems(
     document: vscode.TextDocument,
@@ -357,6 +444,23 @@ export class LangCompletionProvider implements vscode.CompletionItemProvider {
     _context: vscode.CompletionContext,
   ): vscode.CompletionItem[] | undefined {
     const before = document.lineAt(position.line).text.slice(0, position.character);
+
+    // 技能效果 ID 补全：在 effect_id: " 或 effect: " 的引号内补全效果 ID
+    if (this.effects) {
+      const effectIdRe = /(?:effect_id|effect)\s*:\s*r?['"]$/;
+      if (effectIdRe.test(before)) {
+        return this.effects.ids().map((id) => {
+          const entry = this.effects!.entry(id);
+          const item = new vscode.CompletionItem(id, vscode.CompletionItemKind.EnumMember);
+          if (entry) {
+            item.detail = `[${entry.category}] ${entry.description}`;
+            item.documentation = formatEffect(entry);
+            item.sortText = entry.category + id;
+          }
+          return item;
+        });
+      }
+    }
 
     // OCR 函数的 match 正则补全：在 re.compile(" 或 match=" 的引号内补全 ocr.po 的 key
     const ocrMatchRe =
