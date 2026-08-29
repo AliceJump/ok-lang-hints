@@ -20,65 +20,79 @@ interface TaskListResult {
   configModule?: string;
 }
 
+/** 每个任务可编辑的一项参数（对应项目任务 default_config 里的一个 key） */
+interface TaskParamField {
+  key: string;
+  /** 默认值（决定控件类型：bool→开关、int/float→数字、str→文本框、list→多选/列表） */
+  default?: unknown;
+  /** 当前已保存值 */
+  value?: unknown;
+  /** config_type 元信息（drop_down / multi_selection 的 options 等） */
+  type?: Record<string, unknown>;
+  /** config_description 说明 */
+  desc?: string;
+}
+
+/** 从项目任务类采集到的 schema */
+interface TaskSchema {
+  /** 该任务可编辑的参数列表（按 default_config 顺序） */
+  fields: TaskParamField[];
+  /** 是否采集失败（broken） */
+  broken?: boolean;
+  error?: string;
+}
+
+/** 每个任务的独立配置（持久化到 .vscode/ok-lang-hints-tasks.json） */
+interface TaskConfig {
+  extraArgs?: string;
+  env?: Record<string, string>;
+  timeout?: number;
+  /** 任务参数覆盖：key=任务 default_config 的 key，value=覆盖值 */
+  params?: Record<string, unknown>;
+}
+
+/** 所有任务配置的持久化结构 */
+interface TaskConfigStore {
+  tasks: Record<string, TaskConfig>;
+}
+
+/** schema 采集结果（刷新时全量 import 项目任务后落盘缓存） */
+interface SchemaProbeResult {
+  ok: boolean;
+  error?: string;
+  schemas?: Record<string, TaskSchema>;
+  /** 参与采集的任务总数 */
+  total?: number;
+}
+
+/** 扩展根目录下 python/ 脚本的绝对路径 */
+function pythonScript(extensionUri: vscode.Uri, name: string): string {
+  return path.join(extensionUri.fsPath, 'python', name);
+}
+
+/** 解析 Python 子进程 stdout 中最后一个 JSON 行（前面的输出可能是日志） */
+function parseJsonFromStdout(stdout: string): any {
+  const lines = stdout.split('\n').filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      return JSON.parse(lines[i]);
+    } catch { /* 跳过非 JSON 行 */ }
+  }
+  return null;
+}
+
 /**
  * 用 Python 子进程 + AST 安全解析 ok-script 项目的 src/config.py，
  * 提取 onetime_tasks / trigger_tasks 注册表，不导入任何模块。
  */
-function parseConfigTasks(projectDir: string, pythonPath: string): TaskListResult {
-  const script = String.raw`
-import ast, json, os, sys
-project_dir = ${JSON.stringify(projectDir)}
-
-def extract_tasks(src_path):
-    with open(src_path, encoding='utf-8') as f:
-        tree = ast.parse(f.read())
-    onetime = []
-    trigger = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Dict):
-            for k, v in zip(node.keys, node.values):
-                if not (k and isinstance(k, ast.Constant)):
-                    continue
-                key = k.value
-                if key not in ('onetime_tasks', 'trigger_tasks'):
-                    continue
-                if not isinstance(v, ast.List):
-                    continue
-                for el in v.elts:
-                    if isinstance(el, ast.List) and len(el.elts) >= 2:
-                        mod = el.elts[0].value if isinstance(el.elts[0], ast.Constant) else None
-                        cls = el.elts[1].value if isinstance(el.elts[1], ast.Constant) else None
-                        if mod and cls:
-                            (onetime if key == 'onetime_tasks' else trigger).append(
-                                {"module": mod, "class": cls})
-    return onetime, trigger
-
-# 尝试 src/config.py 或 config.py
-for candidate in (os.path.join(project_dir, 'src', 'config.py'),
-                  os.path.join(project_dir, 'config.py')):
-    if os.path.exists(candidate):
-        onetime, trigger = extract_tasks(candidate)
-        # config 模块路径：src/config.py -> src.config；config.py -> config
-        is_src = candidate.endswith(os.path.join('src', 'config.py'))
-        config_module = 'src.config' if is_src else 'config'
-        print(json.dumps({"ok": True, "project": os.path.basename(project_dir),
-                          "config_module": config_module,
-                          "onetime": onetime, "trigger": trigger},
-                         ensure_ascii=False))
-        sys.exit(0)
-print(json.dumps({"ok": False, "error": f"找不到 config.py: {project_dir}"}, ensure_ascii=False))
-sys.exit(1)
-`;
-  const args = ['-c', script];
-  const env = { ...process.env };
-
+function parseConfigTasks(extensionUri: vscode.Uri, projectDir: string, pythonPath: string): TaskListResult {
+  const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' };
   try {
-    const result = cp.spawnSync(pythonPath, args, {
+    const result = cp.spawnSync(pythonPath, [pythonScript(extensionUri, 'parse_config_tasks.py'), projectDir], {
       cwd: projectDir,
       env,
       encoding: 'utf-8',
       timeout: 15000,
-      // 项目可能在 .venv 下有自己的依赖，不需要继承太多
       windowsHide: true,
     });
     if (result.error) {
@@ -87,15 +101,7 @@ sys.exit(1)
     if (result.status !== 0) {
       return { ok: false, error: result.stderr?.trim() || `退出码 ${result.status}` };
     }
-    // 找到最后一个 JSON 行（前面的输出可能是日志）
-    const lines = (result.stdout || '').split('\n').filter(Boolean);
-    let parsed: any = null;
-    for (let i = lines.length - 1; i >= 0; i--) {
-      try {
-        parsed = JSON.parse(lines[i]);
-        break;
-      } catch { /* 跳过非 JSON 行 */ }
-    }
+    const parsed = parseJsonFromStdout(result.stdout || '');
     if (!parsed || !parsed.ok) {
       return { ok: false, error: parsed?.error || '解析任务列表失败' };
     }
@@ -114,27 +120,51 @@ sys.exit(1)
   }
 }
 
-/** 运行单个任务的 shell 命令（headless，不启动 GUI） */
-function buildRunArgs(taskClassName: string, configModule: string): string[] {
-  // 用 python -c 直接调用 ok.run_task，避免依赖项目内 .venv 的 console script
-  const code = [
-    'import sys',
-    // 强制 stdout/stderr 用 UTF-8 输出，避免 Windows 控制台 GBK 编码导致 Node 端乱码
-    "sys.stdout.reconfigure(encoding='utf-8')",
-    "sys.stderr.reconfigure(encoding='utf-8')",
-    'sys.path.insert(0, ".")',
-    'from ok import run_task',
-    `from ${configModule} import config`,
-    // 过滤任务注册表：只保留目标任务，避免 TaskManager 加载其他
-    // 有导入问题的任务（如 ok-end-field 的 characters 包问题）导致整体失败
-    // 注意：不能直接把 trigger_tasks 清空——若目标任务本身是 trigger 任务，
-    // OK.get_task 会先查 onetime_tasks 再查 trigger_tasks，清空会导致找不到。
-    'config = dict(config)',
-    `config['onetime_tasks'] = [t for t in config.get('onetime_tasks', []) if t[1] == ${JSON.stringify(taskClassName)}]`,
-    `config['trigger_tasks'] = [t for t in config.get('trigger_tasks', []) if t[1] == ${JSON.stringify(taskClassName)}]`,
-    `run_task(config, task=${JSON.stringify(taskClassName)})`,
-  ].join('; ');
-  return ['-c', code];
+/**
+ * 运行单个任务（headless，不启动 GUI）——spawn python/run_task.py。
+ *
+ * 参数覆盖经环境变量 OK_LANG_HINTS_INJECT 传入：{"TaskClassName": {key: value}}。
+ * run_task.py 内猴子补丁 BaseTask.after_init，在任务加载配置后把 params 覆盖进
+ * self.config（仅内存，不写 configs/*.json，不污染项目配置）。
+ */
+function buildRunTaskCommand(extensionUri: vscode.Uri, taskClassName: string, configModule: string): string[] {
+  return [
+    pythonScript(extensionUri, 'run_task.py'),
+    '--task', taskClassName,
+    '--config-module', configModule,
+  ];
+}
+
+/**
+ * 用 Python 子进程 + 全量 import 采集项目所有任务的配置 schema —— spawn
+ * python/probe_task_schemas.py。复用 ok-script 的 OK(config) + TaskManager
+ * 初始化来实例化任务，拿到经过继承链合并的真实 default_config / config_type /
+ * config_description / 已保存 config。逐任务 try/except 容错，坏任务标记 broken。
+ */
+function probeTaskSchemas(extensionUri: vscode.Uri, projectDir: string, pythonPath: string): SchemaProbeResult {
+  const env = { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' };
+  try {
+    const result = cp.spawnSync(pythonPath, [pythonScript(extensionUri, 'probe_task_schemas.py'), projectDir], {
+      cwd: projectDir,
+      env,
+      encoding: 'utf-8',
+      timeout: 120000,
+      windowsHide: true,
+    });
+    if (result.error) {
+      return { ok: false, error: `无法运行 Python: ${result.error.message}` };
+    }
+    if (result.status !== 0) {
+      return { ok: false, error: result.stderr?.trim() || `退出码 ${result.status}` };
+    }
+    const parsed = parseJsonFromStdout(result.stdout || '');
+    if (!parsed || !parsed.ok) {
+      return { ok: false, error: parsed?.error || '采集任务 schema 失败' };
+    }
+    return { ok: true, schemas: parsed.schemas, total: parsed.total };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 /** 侧边栏任务启动视图 */
@@ -147,6 +177,10 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
   private configModule = 'src.config';
   private childProcess: cp.ChildProcess | null = null;
   private view: vscode.WebviewView | null = null;
+  /** 每任务独立配置（内存缓存 + 持久化到 .vscode/ok-lang-hints-tasks.json） */
+  private taskConfigs: Record<string, TaskConfig> = {};
+  /** 采集到的任务参数 schema（缓存到 .vscode/ok-lang-hints-schema.json） */
+  private schemas: Record<string, TaskSchema> = {};
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -154,14 +188,14 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     this.output = vscode.window.createOutputChannel('ok-script 任务启动');
   }
 
-resolveWebviewView(view: vscode.WebviewView): void {
+  resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
     view.webview.options = {
       enableScripts: true,
     };
     view.webview.html = this.buildHtml();
 
-view.webview.onDidReceiveMessage(async (msg) => {
+    view.webview.onDidReceiveMessage(async (msg) => {
       switch (msg.type) {
         case 'ready':
           await this.refreshTasks(view);
@@ -175,8 +209,78 @@ view.webview.onDidReceiveMessage(async (msg) => {
         case 'stop':
           await this.stopTask();
           break;
+        case 'saveConfig':
+          await this.saveTaskConfig(msg.task, msg.config);
+          break;
+        case 'loadConfigs':
+          await this.loadTaskConfigs();
+          break;
       }
     });
+  }
+
+  /** .vscode 目录下 ok-lang-hints 数据文件的绝对路径 */
+  private dataFile(name: string): string {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    return path.join(root, '.vscode', name);
+  }
+
+  /** 读取 .vscode/ok-lang-hints-tasks.json（每任务独立配置持久化） */
+  private loadTaskConfigs(): void {
+    try {
+      const p = this.dataFile('ok-lang-hints-tasks.json');
+      if (fs.existsSync(p)) {
+        const raw = JSON.parse(fs.readFileSync(p, 'utf-8')) as Partial<TaskConfigStore>;
+        this.taskConfigs = raw.tasks || {};
+      } else {
+        this.taskConfigs = {};
+      }
+    } catch (e) {
+      this.taskConfigs = {};
+      void vscode.window.showWarningMessage(`读取任务配置失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (this.view) {
+      void this.view.webview.postMessage({ type: 'taskConfigs', configs: this.taskConfigs });
+    }
+  }
+
+  /** 保存单个任务的配置到 .vscode/ok-lang-hints-tasks.json */
+  private async saveTaskConfig(task: TaskInfo, config: TaskConfig): Promise<void> {
+    const key = `${task.module}::${task.className}`;
+    this.taskConfigs[key] = config;
+    const store: TaskConfigStore = { tasks: this.taskConfigs };
+    try {
+      const p = this.dataFile('ok-lang-hints-tasks.json');
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, JSON.stringify(store, null, 2), 'utf-8');
+    } catch (e) {
+      void vscode.window.showErrorMessage(`保存任务配置失败: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+    if (this.view) {
+      void this.view.webview.postMessage({ type: 'taskConfigs', configs: this.taskConfigs });
+    }
+  }
+
+  /** 读取 schema 缓存；无缓存时返回空 */
+  private loadSchemaCache(): Record<string, TaskSchema> {
+    try {
+      const p = this.dataFile('ok-lang-hints-schema.json');
+      if (fs.existsSync(p)) {
+        const raw = JSON.parse(fs.readFileSync(p, 'utf-8')) as SchemaProbeResult;
+        return raw.schemas || {};
+      }
+    } catch { /* 忽略损坏的缓存 */ }
+    return {};
+  }
+
+  /** 写入 schema 缓存 */
+  private saveSchemaCache(schemas: Record<string, TaskSchema>): void {
+    try {
+      const p = this.dataFile('ok-lang-hints-schema.json');
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, JSON.stringify({ ok: true, schemas }, null, 2), 'utf-8');
+    } catch { /* 缓存失败不阻塞 */ }
   }
 
   /**
@@ -226,7 +330,10 @@ view.webview.onDidReceiveMessage(async (msg) => {
       });
       return;
     }
-    const result = parseConfigTasks(projectDir, pythonPath);
+    // 先读缓存（可能有上次采集的 schema，先让 UI 能用）
+    this.schemas = this.loadSchemaCache();
+    this.loadTaskConfigs();
+    const result = parseConfigTasks(this.extensionUri, projectDir, pythonPath);
     if (!result.ok) {
       void view.webview.postMessage({
         type: 'status',
@@ -236,11 +343,37 @@ view.webview.onDidReceiveMessage(async (msg) => {
       return;
     }
     if (result.configModule) this.configModule = result.configModule;
-    await view.webview.postMessage({ type: 'tasks', tasks: result.tasks });
+    await view.webview.postMessage({ type: 'tasks', tasks: result.tasks, schemas: this.schemas });
     void view.webview.postMessage({
       type: 'status',
       level: 'ok',
       text: `${fromConfig ? '' : '自动检测到工作区项目 · '}已加载 ${result.tasks?.length ?? 0} 个任务`,
+    });
+
+    // 后台全量 import 采集 schema（失败不影响任务列表，仅提示）
+    void this.probeSchemasInBackground(view, projectDir, pythonPath);
+  }
+
+  /** 后台采集任务参数 schema：全量 import 项目任务，成功则缓存并回推给 UI */
+  private async probeSchemasInBackground(view: vscode.WebviewView, projectDir: string, pythonPath: string): Promise<void> {
+    const probe = probeTaskSchemas(this.extensionUri, projectDir, pythonPath);
+    if (!probe.ok || !probe.schemas) {
+      void view.webview.postMessage({
+        type: 'status',
+        level: 'warn',
+        text: `任务参数 schema 采集失败（不影响启动）: ${probe.error || '未知错误'}`,
+      });
+      return;
+    }
+    this.schemas = probe.schemas;
+    this.saveSchemaCache(probe.schemas);
+    const brokenCount = Object.values(probe.schemas).filter((s) => s.broken).length;
+    // 只回推 schema 更新，让 UI 把已展开的任务卡片渲染出参数表单
+    void view.webview.postMessage({ type: 'schemas', schemas: this.schemas });
+    void view.webview.postMessage({
+      type: 'status',
+      level: 'ok',
+      text: `已加载 ${probe.total ?? 0} 个任务，参数 schema 已就绪${brokenCount ? `（${brokenCount} 个采集失败）` : ''}`,
     });
   }
 
@@ -268,15 +401,34 @@ view.webview.onDidReceiveMessage(async (msg) => {
     this.output.appendLine(`▶ 启动任务: ${task.displayName} (${task.module})`);
     this.output.appendLine(`项目: ${projectDir}`);
     this.output.appendLine(`Python: ${pythonPath}`);
+    // 带出该任务的独立配置（params 参数覆盖注入运行时）
+    const cfg = this.getTaskConfig(task);
+    if (cfg?.params && Object.keys(cfg.params).length > 0) {
+      this.output.appendLine(`参数覆盖: ${Object.keys(cfg.params).length} 项`);
+    }
     this.output.show(true);
     void view.webview.postMessage({ type: 'running', task, running: true });
 
-    const args = buildRunArgs(task.className, this.configModule);
-    this.childProcess = cp.spawn(pythonPath, args, {
+    const args = buildRunTaskCommand(this.extensionUri, task.className, this.configModule);
+    const childEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      PYTHONIOENCODING: 'utf-8',
+      PYTHONUTF8: '1',
+    };
+    // 参数注入通过环境变量传递（避免命令行长度/转义问题）
+    if (cfg?.params && Object.keys(cfg.params).length > 0) {
+      childEnv.OK_LANG_HINTS_INJECT = JSON.stringify({ [task.className]: cfg.params });
+    }
+    // extraArgs：透传给 python -c 脚本之后的参数（由项目任务解析）
+    const spawnArgs = [...args];
+    if (cfg?.extraArgs && cfg.extraArgs.trim()) {
+      spawnArgs.push(...cfg.extraArgs.trim().split(/\s+/));
+    }
+    this.childProcess = cp.spawn(pythonPath, spawnArgs, {
       cwd: projectDir,
       windowsHide: true,
       // 强制子进程以 UTF-8 编码输出，与 Python 端 reconfigure 配合彻底解决乱码
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      env: childEnv,
     });
     this.childProcess.stdout?.on('data', (d) => this.output.append(d.toString('utf8')));
     this.childProcess.stderr?.on('data', (d) => this.output.append(d.toString('utf8')));
@@ -295,6 +447,12 @@ view.webview.onDidReceiveMessage(async (msg) => {
       this.output.appendLine(code === 0 ? '✅ 任务完成' : `❌ 任务退出码: ${code}`);
       void view.webview.postMessage({ type: 'running', task, running: false, code });
     });
+  }
+
+  /** 读取某任务的独立配置（无则返回默认空配置） */
+  private getTaskConfig(task: TaskInfo): TaskConfig {
+    const key = `${task.module}::${task.className}`;
+    return this.taskConfigs[key] || {};
   }
 
   private async stopTask(): Promise<void> {
@@ -368,155 +526,16 @@ view.webview.onDidReceiveMessage(async (msg) => {
     this.output.dispose();
   }
 
+  /** 读取外部 HTML 视图（media/taskLauncher.html）并注入 CSP nonce */
   private buildHtml(): string {
     const nonce = Math.random().toString(36).slice(2, 14);
-    return `<!DOCTYPE html>
-<html lang="zh-cn">
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'">
-<style>
-  body {
-    color: var(--vscode-editor-foreground);
-    background: var(--vscode-editor-background);
-    font-family: var(--vscode-font-family);
-    font-size: var(--vscode-font-size, 13px);
-    margin: 0;
-    padding: 10px 12px 20px;
-  }
-  .toolbar {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin-bottom: 8px;
-  }
-  button {
-    background: var(--vscode-button-background);
-    color: var(--vscode-button-foreground);
-    border: none;
-    padding: 4px 10px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 12px;
-  }
-  button:hover { background: var(--vscode-button-hoverBackground); }
-  button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
-  .task {
-    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,.25));
-    border-radius: 6px;
-    padding: 8px 10px;
-    margin-bottom: 6px;
-    background: var(--vscode-editorWidget-background, rgba(128,128,128,.06));
-  }
-  .task:hover { border-color: var(--vscode-focusBorder); }
-  .task .name { font-weight: 600; margin-bottom: 2px; }
-  .task .cls { opacity: .6; font-size: 11px; }
-  .task .launch-btn {
-    margin-top: 6px;
-    width: 100%;
-  }
-  .task .launch-btn:disabled { opacity: .5; cursor: not-allowed; }
-  .task .stop-btn {
-    margin-top: 6px;
-    width: 100%;
-    background: var(--vscode-button-secondaryBackground);
-    color: var(--vscode-button-secondaryForeground);
-  }
-  .task .stop-btn:disabled { opacity: .5; cursor: not-allowed; }
-  .status { margin-top: 8px; padding: 6px 8px; border-radius: 4px; font-size: 12px; }
-  .status.warn { background: var(--vscode-inputValidation-warningBackground, rgba(255,193,7,.15)); }
-  .status.error { background: var(--vscode-inputValidation-errorBackground, rgba(255,0,0,.15)); }
-  .status.ok { background: var(--vscode-inputValidation-infoBackground, rgba(0,122,204,.15)); }
-  .empty { opacity: .6; text-align: center; margin-top: 32px; line-height: 1.8; }
-</style>
-</head>
-<body>
-  <div class="toolbar">
-    <button id="refresh" class="secondary">↻ 刷新</button>
-  </div>
-  <div id="tasks"></div>
-  <div id="status" class="status" style="display:none"></div>
-  <div id="empty" class="empty" style="display:none">未找到任务。<br>请先在设置中配置项目路径。</div>
-<script nonce="${nonce}">
-  const vscode = acquireVsCodeApi();
-  const tasksEl = document.getElementById('tasks');
-  const statusEl = document.getElementById('status');
-  const emptyEl = document.getElementById('empty');
-  const refreshBtn = document.getElementById('refresh');
-  let running = false;
-
-  function setStatus(level, text) {
-    if (!text) { statusEl.style.display = 'none'; return; }
-    statusEl.style.display = '';
-    statusEl.className = 'status ' + level;
-    statusEl.textContent = text;
-  }
-
-  function render(tasks) {
-    tasksEl.innerHTML = '';
-    emptyEl.style.display = tasks.length ? 'none' : '';
-    for (const t of tasks) {
-      const card = document.createElement('div');
-      card.className = 'task';
-      const nm = document.createElement('div');
-      nm.className = 'name';
-      nm.textContent = t.displayName;
-      nm.title = t.module;
-      const cl = document.createElement('div');
-      cl.className = 'cls';
-      cl.textContent = t.className;
-      const launchBtn = document.createElement('button');
-      launchBtn.className = 'launch-btn';
-      launchBtn.textContent = '▶ 启动';
-      launchBtn.dataset.module = t.module;
-      launchBtn.dataset.cls = t.className;
-      launchBtn.dataset.name = t.displayName;
-      launchBtn.addEventListener('click', () => {
-        if (running) return;
-        vscode.postMessage({ type: 'launch', task: { module: t.module, className: t.className, displayName: t.displayName } });
-      });
-      const stopBtn = document.createElement('button');
-      stopBtn.className = 'stop-btn';
-      stopBtn.textContent = '⏹ 停止';
-      stopBtn.dataset.module = t.module;
-      stopBtn.dataset.cls = t.className;
-      stopBtn.dataset.name = t.displayName;
-      stopBtn.addEventListener('click', () => {
-        if (!running) return;
-        vscode.postMessage({ type: 'stop', task: { module: t.module, className: t.className, displayName: t.displayName } });
-      });
-      card.appendChild(nm);
-      card.appendChild(cl);
-      card.appendChild(launchBtn);
-      card.appendChild(stopBtn);
-      tasksEl.appendChild(card);
+    const htmlPath = path.join(this.extensionUri.fsPath, 'media', 'taskLauncher.html');
+    let html = '';
+    try {
+      html = fs.readFileSync(htmlPath, 'utf-8');
+    } catch (e) {
+      return `<!DOCTYPE html><html lang="zh-cn"><head><meta charset="UTF-8"><title>错误</title></head><body style="font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:16px">无法读取视图文件: ${e instanceof Error ? e.message : String(e)}</body></html>`;
     }
-  }
-
-  function setRunning(r) {
-    running = r;
-    for (const b of tasksEl.querySelectorAll('.launch-btn')) {
-      b.disabled = r;
-      b.textContent = r ? '⏳ 运行中…' : '▶ 启动';
-    }
-    for (const b of tasksEl.querySelectorAll('.stop-btn')) {
-      b.disabled = !r;
-      b.textContent = r ? '⏹ 停止' : '⏹ 停止';
-    }
-  }
-
-  refreshBtn.addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
-  window.addEventListener('message', (e) => {
-    const msg = e.data;
-    switch (msg.type) {
-      case 'tasks': render(msg.tasks || []); break;
-      case 'status': setStatus(msg.level, msg.text); break;
-      case 'running': setRunning(msg.running); if (msg.running === false) setStatus('ok', '任务结束，详见输出面板'); break;
-    }
-  });
-  vscode.postMessage({ type: 'ready' });
-</script>
-</body>
-</html>`;
+    return html.split('__CSP_NONCE__').join(nonce);
   }
 }
