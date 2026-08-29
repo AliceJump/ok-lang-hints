@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-__CSP_NONCE__'">
+<title>ok-script 任务启动</title>
+<style>
+  body {
+    color: var(--vscode-editor-foreground);
+    background: var(--vscode-editor-background);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size, 13px);
+    margin: 0;
+    padding: 10px 12px 20px;
+  }
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  button {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  button:hover { background: var(--vscode-button-hoverBackground); }
+  button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
+  .task {
+    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,.25));
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    background: var(--vscode-editorWidget-background, rgba(128,128,128,.06));
+  }
+  .task:hover { border-color: var(--vscode-focusBorder); }
+  .task .name { font-weight: 600; margin-bottom: 2px; }
+  .task .cls { opacity: .6; font-size: 11px; }
+  .task .launch-btn {
+    margin-top: 6px;
+    width: 100%;
+  }
+  .task .launch-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .task .stop-btn {
+    margin-top: 6px;
+    width: 100%;
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+  }
+  .task .stop-btn:disabled { opacity: .5; cursor: not-allowed; }
+  /* 参数配置区 */
+  .cfg-toggle {
+    margin-top: 6px;
+    width: 100%;
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+  }
+  .cfg-panel {
+    display: none;
+    margin-top: 8px;
+    border-top: 1px solid var(--vscode-panel-border, rgba(128,128,128,.2));
+    padding-top: 8px;
+  }
+  .cfg-panel.open { display: block; }
+  .cfg-field { margin-bottom: 8px; }
+  .cfg-field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 2px;
+    cursor: pointer;
+  }
+  .cfg-field .cfg-desc {
+    font-size: 11px;
+    opacity: .6;
+    margin-bottom: 4px;
+    white-space: pre-wrap;
+    line-height: 1.4;
+  }
+  .cfg-field select,
+  .cfg-field input[type=text],
+  .cfg-field input[type=number] {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, transparent);
+    border-radius: 3px;
+    padding: 3px 6px;
+    font-size: 12px;
+  }
+  .cfg-field input[type=checkbox] { accent-color: var(--vscode-focusBorder); }
+  .cfg-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .cfg-actions button { flex: 1; }
+  .cfg-broken { opacity: .7; font-size: 12px; margin-top: 6px; }
+  .cfg-empty { opacity: .6; font-size: 12px; margin-top: 6px; }
+  .status { margin-top: 8px; padding: 6px 8px; border-radius: 4px; font-size: 12px; }
+  .status.warn { background: var(--vscode-inputValidation-warningBackground, rgba(255,193,7,.15)); }
+  .status.error { background: var(--vscode-inputValidation-errorBackground, rgba(255,0,0,.15)); }
+  .status.ok { background: var(--vscode-inputValidation-infoBackground, rgba(0,122,204,.15)); }
+  .empty { opacity: .6; text-align: center; margin-top: 32px; line-height: 1.8; }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button id="refresh" class="secondary">↻ 刷新</button>
+  </div>
+  <div id="tasks"></div>
+  <div id="status" class="status" style="display:none"></div>
+  <div id="empty" class="empty" style="display:none">未找到任务。<br>请先在设置中配置项目路径。</div>
+<script nonce="__CSP_NONCE__">
+  const vscode = acquireVsCodeApi();
+  const tasksEl = document.getElementById('tasks');
+  const statusEl = document.getElementById('status');
+  const emptyEl = document.getElementById('empty');
+  const refreshBtn = document.getElementById('refresh');
+  let running = false;
+  // 已加载的 schema（{类名: {fields}}）与任务配置（{module::cls: {...}}）
+  let schemas = {};
+  let taskConfigs = {};
+  let currentTasks = [];
+
+  function setStatus(level, text) {
+    if (!text) { statusEl.style.display = 'none'; return; }
+    statusEl.style.display = '';
+    statusEl.className = 'status ' + level;
+    statusEl.textContent = text;
+  }
+
+  function taskKey(t) { return t.module + '::' + t.className; }
+
+  /** 渲染单个参数字段控件；值变更时实时写回 config.params */
+  function buildField(container, t, field, config) {
+    const row = document.createElement('div');
+    row.className = 'cfg-field';
+    const label = document.createElement('label');
+    label.textContent = field.key;
+    label.title = field.key;
+    row.appendChild(label);
+    if (field.desc) {
+      const d = document.createElement('div');
+      d.className = 'cfg-desc';
+      d.textContent = field.desc;
+      row.appendChild(d);
+    }
+    const setValue = (v) => {
+      config.params = config.params || {};
+      config.params[field.key] = v;
+    };
+    const typeMeta = field.type || {};
+    const rawValue = config.params && field.key in config.params
+      ? config.params[field.key]
+      : (field.value !== undefined ? field.value : field.default);
+    const typeName = String(typeMeta.type || '');
+    const options = Array.isArray(typeMeta.options) ? typeMeta.options : [];
+
+    // 1) drop_down：下拉
+    if (typeName === 'drop_down' && options.length) {
+      const sel = document.createElement('select');
+      const cur = String(rawValue === undefined ? '' : rawValue);
+      let hasCur = false;
+      for (const op of options) {
+        const o = document.createElement('option');
+        o.value = String(op);
+        o.textContent = String(op);
+        if (String(op) === cur) { o.selected = true; hasCur = true; }
+        sel.appendChild(o);
+      }
+      if (!hasCur) {
+        const o = document.createElement('option');
+        o.value = cur; o.textContent = cur + '（当前）'; o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.addEventListener('change', () => setValue(sel.value));
+      row.appendChild(sel);
+    } else if (typeof rawValue === 'boolean') {
+      // 2) 布尔：开关
+      const wrap = document.createElement('label');
+      wrap.style.display = 'flex'; wrap.style.alignItems = 'center'; wrap.style.gap = '6px';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!rawValue;
+      const t2 = document.createElement('span');
+      t2.textContent = rawValue ? '开启' : '关闭';
+      const sync = () => { t2.textContent = cb.checked ? '开启' : '关闭'; setValue(cb.checked); };
+      cb.addEventListener('change', sync);
+      wrap.appendChild(cb); wrap.appendChild(t2);
+      row.appendChild(wrap);
+    } else if (typeof rawValue === 'number') {
+      // 3) 数字：数字框
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.value = String(rawValue);
+      if (typeMeta.minimum !== undefined) inp.min = String(typeMeta.minimum);
+      if (typeMeta.maximum !== undefined) inp.max = String(typeMeta.maximum);
+      inp.addEventListener('change', () => {
+        const n = Number(inp.value);
+        setValue(Number.isNaN(n) ? 0 : n);
+      });
+      row.appendChild(inp);
+    } else if (Array.isArray(rawValue) && options.length) {
+      // 4) multi_selection：多选下拉（多选框）
+      const wrap = document.createElement('div');
+      const sel = document.createElement('select');
+      sel.multiple = true;
+      sel.size = Math.min(6, options.length + 1);
+      const curArr = (Array.isArray(rawValue) ? rawValue : []).map(String);
+      for (const op of options) {
+        const o = document.createElement('option');
+        o.value = String(op);
+        o.textContent = String(op);
+        if (curArr.includes(String(op))) o.selected = true;
+        sel.appendChild(o);
+      }
+      const hint = document.createElement('div');
+      hint.className = 'cfg-desc';
+      hint.textContent = '按住 Ctrl 多选';
+      sel.addEventListener('change', () => {
+        setValue(Array.from(sel.selectedOptions).map((o) => o.value));
+      });
+      wrap.appendChild(sel); wrap.appendChild(hint);
+      row.appendChild(wrap);
+    } else if (Array.isArray(rawValue)) {
+      // 5) 普通 list：逗号分隔文本
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.value = (Array.isArray(rawValue) ? rawValue : []).join(', ');
+      inp.addEventListener('change', () => {
+        setValue(inp.value.split(',').map((s) => s.trim()).filter(Boolean));
+      });
+      row.appendChild(inp);
+    } else {
+      // 6) 其他（str 等）：文本框
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.value = rawValue === undefined || rawValue === null ? '' : String(rawValue);
+      inp.addEventListener('change', () => setValue(inp.value));
+      row.appendChild(inp);
+    }
+    container.appendChild(row);
+  }
+
+  /** 渲染某任务的参数配置面板 */
+  function buildConfigPanel(card, t, schema) {
+    const panel = document.createElement('div');
+    panel.className = 'cfg-panel';
+    const config = Object.assign({}, taskConfigs[taskKey(t)] || {});
+    if (!config.params) config.params = {};
+    if (schema && schema.broken) {
+      const br = document.createElement('div');
+      br.className = 'cfg-broken';
+      br.textContent = '⚠ 该任务 schema 采集失败，无法自动生成表单：' + (schema.error || '');
+      panel.appendChild(br);
+    } else if (schema && schema.fields && schema.fields.length) {
+      for (const f of schema.fields) buildField(panel, t, f, config);
+      const actions = document.createElement('div');
+      actions.className = 'cfg-actions';
+      const save = document.createElement('button');
+      save.textContent = '💾 保存参数';
+      save.addEventListener('click', () => {
+        vscode.postMessage({ type: 'saveConfig', task: t, config });
+        setStatus('ok', '已保存 ' + t.displayName + ' 的参数');
+      });
+      const reset = document.createElement('button');
+      reset.className = 'secondary';
+      reset.textContent = '↺ 重置';
+      reset.addEventListener('click', () => {
+        const fresh = Object.assign({}, taskConfigs[taskKey(t)] || {});
+        delete fresh.params;
+        vscode.postMessage({ type: 'saveConfig', task: t, config: fresh });
+        setStatus('ok', '已重置 ' + t.displayName + ' 的参数');
+      });
+      actions.appendChild(save); actions.appendChild(reset);
+      panel.appendChild(actions);
+    } else {
+      const e = document.createElement('div');
+      e.className = 'cfg-empty';
+      e.textContent = '暂无可配置参数（schema 未就绪或该任务无 default_config）。';
+      panel.appendChild(e);
+    }
+    return panel;
+  }
+
+  function render(tasks) {
+    currentTasks = tasks;
+    tasksEl.innerHTML = '';
+    emptyEl.style.display = tasks.length ? 'none' : '';
+    for (const t of tasks) {
+      const card = document.createElement('div');
+      card.className = 'task';
+      const nm = document.createElement('div');
+      nm.className = 'name';
+      nm.textContent = t.displayName;
+      nm.title = t.module;
+      const cl = document.createElement('div');
+      cl.className = 'cls';
+      cl.textContent = t.className;
+      const launchBtn = document.createElement('button');
+      launchBtn.className = 'launch-btn';
+      launchBtn.textContent = '▶ 启动';
+      launchBtn.dataset.module = t.module;
+      launchBtn.dataset.cls = t.className;
+      launchBtn.dataset.name = t.displayName;
+      launchBtn.addEventListener('click', () => {
+        if (running) return;
+        vscode.postMessage({ type: 'launch', task: { module: t.module, className: t.className, displayName: t.displayName } });
+      });
+      const stopBtn = document.createElement('button');
+      stopBtn.className = 'stop-btn';
+      stopBtn.textContent = '⏹ 停止';
+      stopBtn.dataset.module = t.module;
+      stopBtn.dataset.cls = t.className;
+      stopBtn.dataset.name = t.displayName;
+      stopBtn.addEventListener('click', () => {
+        if (!running) return;
+        vscode.postMessage({ type: 'stop', task: { module: t.module, className: t.className, displayName: t.displayName } });
+      });
+      const schema = schemas[t.className];
+      const cfgToggle = document.createElement('button');
+      cfgToggle.className = 'cfg-toggle';
+      cfgToggle.textContent = '⚙ 参数';
+      const panel = buildConfigPanel(card, t, schema);
+      cfgToggle.addEventListener('click', () => {
+        const open = panel.classList.toggle('open');
+        cfgToggle.textContent = open ? '▲ 收起参数' : '⚙ 参数';
+      });
+      card.appendChild(nm);
+      card.appendChild(cl);
+      card.appendChild(launchBtn);
+      card.appendChild(stopBtn);
+      card.appendChild(cfgToggle);
+      card.appendChild(panel);
+      tasksEl.appendChild(card);
+    }
+  }
+
+  function setRunning(r) {
+    running = r;
+    for (const b of tasksEl.querySelectorAll('.launch-btn')) {
+      b.disabled = r;
+      b.textContent = r ? '⏳ 运行中…' : '▶ 启动';
+    }
+    for (const b of tasksEl.querySelectorAll('.stop-btn')) {
+      b.disabled = !r;
+    }
+  }
+
+  refreshBtn.addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
+  window.addEventListener('message', (e) => {
+    const msg = e.data;
+    switch (msg.type) {
+      case 'tasks':
+        schemas = msg.schemas || schemas;
+        render(msg.tasks || []);
+        break;
+      case 'schemas':
+        schemas = msg.schemas || schemas;
+        render(currentTasks);
+        break;
+      case 'taskConfigs':
+        taskConfigs = msg.configs || {};
+        render(currentTasks);
+        break;
+      case 'status': setStatus(msg.level, msg.text); break;
+      case 'running': setRunning(msg.running); if (msg.running === false) setStatus('ok', '任务结束，详见输出面板'); break;
+    }
+  });
+  vscode.postMessage({ type: 'ready' });
+  vscode.postMessage({ type: 'loadConfigs' });
+</script>
+</body>
+</html>
