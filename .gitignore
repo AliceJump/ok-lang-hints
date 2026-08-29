@@ -4,3 +4,5 @@ out/
 *.log
 .vscode-test/
 .vscode/
+configs/
+.vscodeignore
