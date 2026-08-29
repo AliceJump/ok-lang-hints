@@ -38,8 +38,8 @@ export function parseEffects(text: string): Map<string, EffectEntry> {
       if (isCategoryLine(c)) category = c;
       continue;
     }
-    // 枚举成员：NAME = "VALUE"
-    const mm = /^([A-Z][A-Z0-9_]*)\s*=\s*"([A-Z0-9_]+)"$/.exec(line);
+    // 枚举成员：NAME = "VALUE"（行尾可带 # 注释）
+    const mm = /^([A-Z][A-Z0-9_]*)\s*=\s*"([A-Z0-9_]+)"\s*(?:#.*)?$/.exec(line);
     if (mm && category) members.set(mm[1], { value: mm[2], category });
     // 描述映射：EffectType.NAME: "描述"（末尾可带逗号）
     const dm = /^EffectType\.([A-Z][A-Z0-9_]*)\s*:\s*"([^"]*)",?\s*$/.exec(line);
