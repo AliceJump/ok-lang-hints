@@ -2,7 +2,7 @@
 """在 ok-script 项目目录下运行单个任务（headless，不启动 GUI）。
 
 用法（在项目目录下）:
-    python run_task.py --task TaskClassName --config-module src.config [--extra args...]
+    python run_task.py --task TaskClassName --task-module module.path --config-module src.config -- [额外参数]
 
 参数覆盖通过环境变量 OK_LANG_HINTS_INJECT 传入:
     {"module.path::TaskClassName": {"key": value, ...}}
@@ -49,7 +49,9 @@ def main():
     parser.add_argument("--task", required=True, help="任务类名")
     parser.add_argument("--task-module", required=True, help="任务模块路径")
     parser.add_argument("--config-module", default="src.config", help="config 模块路径，如 src.config 或 config")
-    args = parser.parse_args()
+    args, extra_args = parser.parse_known_args()
+    if extra_args and extra_args[0] == "--":
+        extra_args = extra_args[1:]
 
     # 读参数覆盖（环境变量 -> 不炸）
     inject = {}
@@ -83,10 +85,9 @@ def main():
         t for t in config.get("trigger_tasks", []) if t[0] == task_module and t[1] == task_name
     ]
 
-    # 清理 sys.argv —— ok-script 的 OK.__init__ 内部会 argparse 解析 sys.argv，
-    # 与我们的参数冲突，必须在 import run_task 前替换为空列表
+    # 只把显式透传参数交给 ok-script，避免辅助脚本自身参数与框架 argparse 冲突。
     saved_argv = sys.argv[:]
-    sys.argv = [saved_argv[0]]
+    sys.argv = [saved_argv[0], *extra_args]
 
     from ok import run_task
 

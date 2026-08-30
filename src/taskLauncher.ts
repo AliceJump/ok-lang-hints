@@ -40,10 +40,19 @@ interface TaskSchema {
   /** 是否采集失败（broken） */
   broken?: boolean;
   error?: string;
+  displayName?: string;
+  description?: string;
+  kind?: 'onetime' | 'trigger';
 }
 
 /** 每个任务的独立配置（持久化到 .vscode/ok-lang-hints-tasks.json） */
 interface TaskConfig {
+  /** 透传给 ok-script / 项目级 argparse 的额外命令行参数。 */
+  extraArgs?: string;
+  /** 仅对当前任务子进程生效的环境变量。 */
+  env?: Record<string, string>;
+  /** 自动停止超时（秒）；0 或未设置表示不限时。 */
+  timeout?: number;
   /** 任务参数覆盖：key=任务 default_config 的 key，value=覆盖值 */
   params?: Record<string, unknown>;
 }
@@ -76,6 +85,47 @@ function parseJsonFromStdout(stdout: string): any {
     } catch { /* 跳过非 JSON 行 */ }
   }
   return null;
+}
+
+/** 解析额外参数：优先接受 JSON 字符串数组，否则按 shell 风格引号拆分。 */
+function parseExtraArgs(value: string | undefined): string[] {
+  const text = value?.trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) {
+      return parsed;
+    }
+  } catch { /* 回退到引号拆分 */ }
+
+  const args: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | '' = '';
+  let escaped = false;
+  for (const char of text) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+    } else if (char === '\\') {
+      escaped = true;
+    } else if (quote) {
+      if (char === quote) quote = '';
+      else current += char;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+    } else if (/\s/.test(char)) {
+      if (current) {
+        args.push(current);
+        current = '';
+      }
+    } else {
+      current += char;
+    }
+  }
+  if (escaped) current += '\\';
+  if (quote) throw new Error('额外参数存在未闭合的引号');
+  if (current) args.push(current);
+  return args;
 }
 
 interface PythonResult {
@@ -190,11 +240,14 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
   private configModule = 'src.config';
   private childProcess: cp.ChildProcess | null = null;
   private stopRequested = false;
+  private timedOutRequested = false;
+  private timeoutTimer: NodeJS.Timeout | undefined;
   private view: vscode.WebviewView | null = null;
   private currentProjectDir = '';
   private refreshGeneration = 0;
   /** 每任务独立配置（内存缓存 + 持久化到 .vscode/ok-lang-hints-tasks.json） */
   private taskConfigs: Record<string, TaskConfig> = {};
+  private knownTasks: TaskInfo[] = [];
   /** 采集到的任务参数 schema（缓存到 .vscode/ok-lang-hints-schema.json） */
   private schemas: Record<string, TaskSchema> = {};
 
@@ -220,19 +273,52 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
           await this.refreshTasks(view);
           break;
         case 'launch':
-          await this.launchTask(view, msg.task);
+          if (this.isKnownTask(msg.task)) await this.launchTask(view, msg.task);
           break;
         case 'stop':
           await this.stopTask();
           break;
         case 'saveConfig':
-          await this.saveTaskConfig(msg.task, msg.config);
+          if (this.isKnownTask(msg.task)) await this.saveTaskConfig(msg.task, this.sanitizeTaskConfig(msg.task, msg.config));
           break;
         case 'loadConfigs':
           await this.loadTaskConfigs();
           break;
       }
     });
+  }
+
+  private isKnownTask(task: unknown): task is TaskInfo {
+    if (!task || typeof task !== 'object') return false;
+    const candidate = task as Partial<TaskInfo>;
+    if (typeof candidate.module !== 'string' || typeof candidate.className !== 'string') return false;
+    return this.knownTasks.some((task) => task.module === candidate.module && task.className === candidate.className);
+  }
+
+  private sanitizeTaskConfig(task: TaskInfo, value: unknown): TaskConfig {
+    if (!value || typeof value !== 'object') return {};
+    const raw = value as Record<string, unknown>;
+    const config: TaskConfig = {};
+    if (typeof raw.extraArgs === 'string' && raw.extraArgs.trim()) config.extraArgs = raw.extraArgs.trim();
+    if (typeof raw.timeout === 'number' && Number.isFinite(raw.timeout) && raw.timeout > 0) {
+      config.timeout = Math.min(raw.timeout, 7 * 24 * 60 * 60);
+    }
+    if (raw.env && typeof raw.env === 'object' && !Array.isArray(raw.env)) {
+      const env: Record<string, string> = {};
+      for (const [key, item] of Object.entries(raw.env as Record<string, unknown>)) {
+        if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && typeof item === 'string') env[key] = item;
+      }
+      if (Object.keys(env).length) config.env = env;
+    }
+    if (raw.params && typeof raw.params === 'object' && !Array.isArray(raw.params)) {
+      const allowed = new Set((this.schemas[this.taskKey(task)]?.fields || []).map((field) => field.key));
+      const params: Record<string, unknown> = {};
+      for (const [key, item] of Object.entries(raw.params as Record<string, unknown>)) {
+        if (allowed.has(key)) params[key] = item;
+      }
+      if (Object.keys(params).length) config.params = params;
+    }
+    return config;
   }
 
   /** .vscode 目录下 ok-lang-hints 数据文件的绝对路径 */
@@ -344,8 +430,10 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
 
   private async refreshTasks(view: vscode.WebviewView): Promise<void> {
     const generation = ++this.refreshGeneration;
+    this.knownTasks = [];
     const { projectDir, pythonPath, fromConfig } = this.getConfig();
     if (!projectDir) {
+      void view.webview.postMessage({ type: 'tasks', tasks: [], schemas: {} });
       void view.webview.postMessage({
         type: 'status',
         level: 'warn',
@@ -354,6 +442,7 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     if (!fs.existsSync(projectDir)) {
+      void view.webview.postMessage({ type: 'tasks', tasks: [], schemas: {} });
       void view.webview.postMessage({
         type: 'status',
         level: 'warn',
@@ -368,6 +457,7 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     const result = await parseConfigTasks(this.extensionUri, projectDir, pythonPath);
     if (generation !== this.refreshGeneration) return;
     if (!result.ok) {
+      void view.webview.postMessage({ type: 'tasks', tasks: [], schemas: {} });
       void view.webview.postMessage({
         type: 'status',
         level: 'error',
@@ -376,6 +466,7 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     if (result.configModule) this.configModule = result.configModule;
+    this.knownTasks = result.tasks || [];
     await view.webview.postMessage({ type: 'tasks', tasks: result.tasks, schemas: this.schemas });
     void view.webview.postMessage({
       type: 'status',
@@ -404,11 +495,13 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     const brokenCount = Object.values(probe.schemas).filter((s) => s.broken).length;
     // 只回推 schema 更新，让 UI 把已展开的任务卡片渲染出参数表单
     void view.webview.postMessage({ type: 'schemas', schemas: this.schemas });
-    void view.webview.postMessage({
-      type: 'status',
-      level: 'ok',
-      text: `已加载 ${probe.total ?? 0} 个任务，参数 schema 已就绪${brokenCount ? `（${brokenCount} 个采集失败）` : ''}`,
-    });
+    if (!this.running) {
+      void view.webview.postMessage({
+        type: 'status',
+        level: 'ok',
+        text: `已加载 ${probe.total ?? 0} 个任务，参数 schema 已就绪${brokenCount ? `（${brokenCount} 个采集失败）` : ''}`,
+      });
+    }
   }
 
   private async launchTask(view: vscode.WebviewView, task: TaskInfo): Promise<void> {
@@ -432,6 +525,7 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     this.currentTask = task;
     this.running = true;
     this.stopRequested = false;
+    this.timedOutRequested = false;
     this.output.clear();
     this.output.appendLine(`▶ 启动任务: ${task.displayName} (${task.module})`);
     this.output.appendLine(`项目: ${projectDir}`);
@@ -444,11 +538,22 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     this.output.show(true);
     void view.webview.postMessage({ type: 'running', task, running: true });
 
-    const args = buildRunTaskCommand(this.extensionUri, task, this.configModule);
+    let extraArgs: string[];
+    try {
+      extraArgs = parseExtraArgs(cfg.extraArgs);
+    } catch (e) {
+      this.running = false;
+      const message = e instanceof Error ? e.message : String(e);
+      void vscode.window.showErrorMessage(`无法启动任务: ${message}`);
+      void view.webview.postMessage({ type: 'running', task, running: false, error: message });
+      return;
+    }
+    const args = [...buildRunTaskCommand(this.extensionUri, task, this.configModule), '--', ...extraArgs];
     const childEnv: NodeJS.ProcessEnv = {
       ...process.env,
       PYTHONIOENCODING: 'utf-8',
       PYTHONUTF8: '1',
+      ...(cfg.env || {}),
     };
     // 参数注入通过环境变量传递（避免命令行长度/转义问题）
     if (cfg?.params && Object.keys(cfg.params).length > 0) {
@@ -463,6 +568,7 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     this.childProcess.stdout?.on('data', (d) => this.output.append(d.toString('utf8')));
     this.childProcess.stderr?.on('data', (d) => this.output.append(d.toString('utf8')));
     this.childProcess.on('error', (err) => {
+      this.clearTimeoutTimer();
       this.running = false;
       this.childProcess = null;
       this.output.appendLine('');
@@ -471,7 +577,9 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
       void view.webview.postMessage({ type: 'running', task, running: false, error: err.message });
     });
     this.childProcess.on('close', (code) => {
+      this.clearTimeoutTimer();
       const stopped = this.stopRequested;
+      const timedOut = this.timedOutRequested;
       this.running = false;
       this.childProcess = null;
       this.output.appendLine('');
@@ -482,9 +590,19 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
         running: false,
         code,
         stopped,
+        timedOut,
         error: !stopped && code !== 0 ? `任务退出码: ${code}` : undefined,
       });
     });
+    if (cfg.timeout && cfg.timeout > 0) {
+      this.timeoutTimer = setTimeout(() => {
+        if (this.running && this.childProcess) {
+          this.output.appendLine('');
+          this.output.appendLine(`⏱ 已达到 ${cfg.timeout} 秒超时，正在停止任务...`);
+          void this.stopTask(true);
+        }
+      }, cfg.timeout * 1000);
+    }
   }
 
   /** 读取某任务的独立配置（无则返回默认空配置） */
@@ -496,16 +614,17 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     return `${task.module}::${task.className}`;
   }
 
-  private async stopTask(): Promise<void> {
+  private async stopTask(timedOut = false): Promise<void> {
     if (!this.running || !this.childProcess || !this.view) {
       void vscode.window.showWarningMessage('没有正在运行的任务。');
       return;
     }
     
     this.output.appendLine('');
-    this.output.appendLine('⏹ 正在停止任务...');
+    this.output.appendLine(timedOut ? '⏱ 正在停止超时任务...' : '⏹ 正在停止任务...');
     this.stopRequested = true;
-    void this.view.webview.postMessage({ type: 'running', task: this.currentTask, running: true, stopping: true });
+    this.timedOutRequested = timedOut;
+    void this.view.webview.postMessage({ type: 'running', task: this.currentTask, running: true, stopping: true, timedOut });
     
     // 尝试优雅终止
     try {
@@ -531,19 +650,28 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
       }
     } catch (err) {
       this.stopRequested = false;
+      this.timedOutRequested = false;
       this.output.appendLine(`❌ 停止任务失败: ${err instanceof Error ? err.message : String(err)}`);
       void vscode.window.showErrorMessage(`停止任务失败: ${err instanceof Error ? err.message : String(err)}`);
-      void this.view.webview.postMessage({ type: 'running', task: this.currentTask, running: false, error: `停止失败: ${err instanceof Error ? err.message : String(err)}` });
+      void this.view.webview.postMessage({ type: 'running', task: this.currentTask, running: true, error: `停止失败: ${err instanceof Error ? err.message : String(err)}` });
     }
   }
 
   /** 释放资源（output channel 由扩展生命周期统一关闭） */
   dispose(): void {
+    this.clearTimeoutTimer();
     if (this.childProcess) {
       this.childProcess.kill();
       this.childProcess = null;
     }
     this.output.dispose();
+  }
+
+  private clearTimeoutTimer(): void {
+    if (this.timeoutTimer) {
+      clearTimeout(this.timeoutTimer);
+      this.timeoutTimer = undefined;
+    }
   }
 
   /** 读取外部 HTML 视图（media/taskLauncher.html）并注入 CSP nonce */
