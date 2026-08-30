@@ -80,9 +80,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   /** 语言数据监听 glob：lang JSON + gettext PO + 模板数据 + 效果 ID */
   const langWatchPattern = () => {
-    const poDir = poDirectorySetting().replace(/[\\/]+$/, '');
+    const poDir = poDirectorySetting().replace(/[\/]+$/, '');
     const poGlob = poDir.split(/[\\/]/).map(escapeGlobSeg).join('/');
     const effectsFile = (vscode.workspace.getConfiguration('okLangHints').get<string>('effectsFile') || 'src/data/effects.py')
+      .replace(/[\\]+/g, '/')
       .replace(/^\//, '');
     return `**/{assets/lang/*.json,${poGlob}/**/*.po,assets/coco_annotations.json,assets/images/*.png,ok_tasks/assets/coco_annotations.json,ok_tasks/assets/images/*.png,${effectsFile}}`;
   };
@@ -101,8 +102,9 @@ export function activate(context: vscode.ExtensionContext): void {
       .replace(/^\/+/, '');
     if (!rel) return empty;
 
-    const poDir = poDirectorySetting().replace(/[\\/]+$/, '');
+    const poDir = poDirectorySetting().replace(/[\\]+/g, '/').replace(/\/+$/, '');
     const effectsFile = (vscode.workspace.getConfiguration('okLangHints').get<string>('effectsFile') || 'src/data/effects.py')
+      .replace(/[\\]+/g, '/')
       .replace(/^\//, '');
 
     if (rel.startsWith('assets/lang/') && rel.endsWith('.json')) {
@@ -141,7 +143,16 @@ export function activate(context: vscode.ExtensionContext): void {
     watcher.onDidDelete((uri) => dispatchRefresh(getAffectedSources(uri)));
     return watcher;
   };
-  context.subscriptions.push(recreateWatcher());
+  recreateWatcher();
+  context.subscriptions.push({
+    dispose: () => {
+      watcher?.dispose();
+      watcher = undefined;
+      if (langTimer) clearTimeout(langTimer);
+      if (featTimer) clearTimeout(featTimer);
+      if (effectTimer) clearTimeout(effectTimer);
+    },
+  });
 
   const taskLauncher = new TaskLauncherViewProvider(context.extensionUri);
   context.subscriptions.push(taskLauncher);
