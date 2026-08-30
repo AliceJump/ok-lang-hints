@@ -36,6 +36,15 @@
 - 模板图片在扩展激活时后台预热并缓存，hover 和补全详情避免重复解码 4K 原图。
 - 标注或模板 PNG 变化后自动清理缓存并重新预热；批量文件变化使用防抖处理。
 
+### ok-script 任务启动器
+
+- 从目标项目的 `src/config.py` / `config.py` 安全解析一次性任务和触发任务。
+- 后台采集任务的 `default_config`、`config_type`、说明、运行时名称与任务类型，自动生成参数表单。
+- 支持布尔、数字、文本、多行文本、下拉、多选、列表，以及 `sub_configs` 条件显隐。
+- 每个项目、每个任务独立保存参数覆盖；覆盖仅对启动的子进程生效，不写回目标项目的 `configs/*.json`。
+- 可为单个任务设置额外命令行参数、环境变量和自动停止超时。
+- 运行日志输出到 **ok-script 任务启动** 输出频道，并支持停止整个子进程树。
+
 ### 模板面板（可视化浏览全部模板）
 
 两种打开方式：
@@ -97,6 +106,8 @@ npx @vscode/vsce package --allow-missing-repository
 | `okLangHints.enableInlayHints` | `true` | 是否启用幽灵注释 |
 | `okLangHints.featureAliases` | `["fL", "FeatureList"]` | 模板别名列表；别名会用于模板补全和 hover 识别 |
 | `okLangHints.effectsFile` | `src/data/effects.py` | 技能效果 ID 定义文件（`EffectType` 枚举与 `EFFECT_DESCRIPTIONS`），相对工作区根目录 |
+| `okLangHints.okScriptProjectPath` | 空 | 任务启动器使用的 ok-script 项目根目录；为空时尝试使用当前工作区 |
+| `okLangHints.okScriptPython` | 空 | 任务启动器使用的 Python；为空时优先使用目标项目 `.venv/Scripts/python.exe` |
 
 **命令**：
 

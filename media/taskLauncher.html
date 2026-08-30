@@ -40,6 +40,8 @@
   .task:hover { border-color: var(--vscode-focusBorder); }
   .task .name { font-weight: 600; margin-bottom: 2px; }
   .task .cls { opacity: .6; font-size: 11px; }
+  .task .description { opacity: .75; font-size: 11px; margin-top: 4px; white-space: pre-wrap; }
+  .task .kind { float: right; opacity: .75; font-size: 10px; font-weight: normal; }
   .task .launch-btn {
     margin-top: 6px;
     width: 100%;
@@ -102,6 +104,7 @@
     margin-top: 6px;
   }
   .cfg-actions button { flex: 1; }
+  .cfg-section-title { font-size: 11px; font-weight: 700; opacity: .75; margin: 10px 0 6px; }
   .cfg-broken { opacity: .7; font-size: 12px; margin-top: 6px; }
   .cfg-empty { opacity: .6; font-size: 12px; margin-top: 6px; }
   .status { margin-top: 8px; padding: 6px 8px; border-radius: 4px; font-size: 12px; }
@@ -125,10 +128,12 @@
   const emptyEl = document.getElementById('empty');
   const refreshBtn = document.getElementById('refresh');
   let running = false;
-  // 已加载的 schema（{类名: {fields}}）与任务配置（{module::cls: {...}}）
+  // 已加载的 schema 与任务配置均以 module::className 为键。
   let schemas = {};
   let taskConfigs = {};
   let currentTasks = [];
+  let runningTaskKey = '';
+  const openPanels = new Set();
 
   function setStatus(level, text) {
     if (!text) { statusEl.style.display = 'none'; return; }
@@ -140,7 +145,7 @@
   function taskKey(t) { return t.module + '::' + t.className; }
 
   /** 渲染单个参数字段控件；值变更时实时写回 config.params */
-  function buildField(container, t, field, config) {
+  function buildField(container, t, field, config, onChange) {
     const row = document.createElement('div');
     row.className = 'cfg-field';
     const label = document.createElement('label');
@@ -156,6 +161,7 @@
     const setValue = (v) => {
       config.params = config.params || {};
       config.params[field.key] = v;
+      if (onChange) onChange();
     };
     const typeMeta = field.type || {};
     const rawValue = config.params && field.key in config.params
@@ -165,24 +171,28 @@
     const options = Array.isArray(typeMeta.options) ? typeMeta.options : [];
     const optionsAvailable = Array.isArray(typeMeta.options_available) ? typeMeta.options_available : [];
 
-    // 1) drop_down：下拉
-    if (typeName === 'drop_down' && options.length) {
+    // 1) drop_down（显式或仅声明 options）：下拉
+    if ((typeName === 'drop_down' || (!typeName && options.length && !Array.isArray(rawValue))) && options.length) {
       const sel = document.createElement('select');
       const cur = String(rawValue === undefined ? '' : rawValue);
       let hasCur = false;
-      for (const op of options) {
+      for (let index = 0; index < options.length; index++) {
+        const op = options[index];
         const o = document.createElement('option');
-        o.value = String(op);
+        o.value = String(index);
         o.textContent = String(op);
         if (String(op) === cur) { o.selected = true; hasCur = true; }
         sel.appendChild(o);
       }
       if (!hasCur) {
         const o = document.createElement('option');
-        o.value = cur; o.textContent = cur + '（当前）'; o.selected = true;
+        o.value = '-1'; o.textContent = cur + '（当前）'; o.selected = true;
         sel.appendChild(o);
       }
-      sel.addEventListener('change', () => setValue(sel.value));
+      sel.addEventListener('change', () => {
+        const index = Number(sel.value);
+        if (index >= 0 && index < options.length) setValue(options[index]);
+      });
       row.appendChild(sel);
     } else if (typeof rawValue === 'boolean') {
       // 2) 布尔：开关
@@ -211,16 +221,17 @@
         setValue(Number.isNaN(n) ? 0 : n);
       });
       row.appendChild(inp);
-    } else if (Array.isArray(rawValue) && typeName === 'multi_selection' && options.length) {
+    } else if (Array.isArray(rawValue) && (typeName === 'multi_selection' || (!typeName && options.length)) && options.length) {
       // 4) multi_selection：多选下拉（多选框）
       const wrap = document.createElement('div');
       const sel = document.createElement('select');
       sel.multiple = true;
       sel.size = Math.min(6, options.length + 1);
       const curArr = (Array.isArray(rawValue) ? rawValue : []).map(String);
-      for (const op of options) {
+      for (let index = 0; index < options.length; index++) {
+        const op = options[index];
         const o = document.createElement('option');
-        o.value = String(op);
+        o.value = String(index);
         o.textContent = String(op);
         if (curArr.includes(String(op))) o.selected = true;
         sel.appendChild(o);
@@ -229,20 +240,19 @@
       hint.className = 'cfg-desc';
       hint.textContent = '按住 Ctrl 多选';
       sel.addEventListener('change', () => {
-        setValue(Array.from(sel.selectedOptions).map((o) => o.value));
+        setValue(Array.from(sel.selectedOptions).map((o) => options[Number(o.value)]));
       });
       wrap.appendChild(sel); wrap.appendChild(hint);
       row.appendChild(wrap);
     } else if (Array.isArray(rawValue)) {
-      // 5) 普通 list：逗号分隔文本
-      const inp = document.createElement('input');
-      inp.type = 'text';
-      inp.value = (Array.isArray(rawValue) ? rawValue : []).join(', ');
+      // 5) 普通/可排序 list：每行一项，避免值本身含逗号时被破坏
+      const inp = document.createElement('textarea');
+      inp.value = (Array.isArray(rawValue) ? rawValue : []).join('\n');
       if (optionsAvailable.length) {
         inp.title = '可选值: ' + optionsAvailable.map(String).join(', ');
       }
       inp.addEventListener('change', () => {
-        setValue(inp.value.split(',').map((s) => s.trim()).filter(Boolean));
+        setValue(inp.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean));
       });
       row.appendChild(inp);
     } else if (typeof rawValue === 'string' && (typeName === 'text_edit' || rawValue.includes('\n') || rawValue.length > 80)) {
@@ -259,7 +269,71 @@
       inp.addEventListener('change', () => setValue(inp.value));
       row.appendChild(inp);
     }
+    row.dataset.key = field.key;
     container.appendChild(row);
+    return row;
+  }
+
+  function choiceKeys(value) {
+    const values = Array.isArray(value) ? value : [value];
+    const keys = [];
+    for (const item of values) {
+      const raw = String(item);
+      keys.push(raw, raw.toLowerCase(), raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase());
+    }
+    return keys;
+  }
+
+  function activeSubConfigKeys(typeMeta, value) {
+    const rules = typeMeta && typeof typeMeta.sub_configs === 'object' ? typeMeta.sub_configs : null;
+    if (!rules) return [];
+    const active = [];
+    for (const choice of choiceKeys(value)) {
+      const controlled = rules[choice];
+      const keys = typeof controlled === 'string' ? [controlled] : (Array.isArray(controlled) ? controlled : []);
+      for (const key of keys) if (!active.includes(key)) active.push(key);
+    }
+    return active;
+  }
+
+  function buildRuntimeFields(panel, config) {
+    const title = document.createElement('div');
+    title.className = 'cfg-section-title';
+    title.textContent = '启动设置';
+    panel.appendChild(title);
+
+    const addText = (labelText, desc, value, onChange, multiline) => {
+      const row = document.createElement('div');
+      row.className = 'cfg-field';
+      const label = document.createElement('label'); label.textContent = labelText; row.appendChild(label);
+      const help = document.createElement('div'); help.className = 'cfg-desc'; help.textContent = desc; row.appendChild(help);
+      const input = document.createElement(multiline ? 'textarea' : 'input');
+      if (!multiline) input.type = 'text';
+      input.value = value || '';
+      input.addEventListener('change', () => onChange(input.value));
+      row.appendChild(input); panel.appendChild(row);
+    };
+
+    addText('额外参数', '支持引号语法，或填写 JSON 字符串数组，例如 ["--headless", "--profile", "A B"]。', config.extraArgs || '', (value) => {
+      if (value.trim()) config.extraArgs = value.trim(); else delete config.extraArgs;
+    }, false);
+    addText('环境变量', '每行 KEY=VALUE；仅传给当前任务子进程。', Object.entries(config.env || {}).map(([k, v]) => k + '=' + v).join('\n'), (value) => {
+      const env = {};
+      for (const line of value.split(/\r?\n/)) {
+        const index = line.indexOf('=');
+        if (index <= 0) continue;
+        const key = line.slice(0, index).trim();
+        if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) env[key] = line.slice(index + 1);
+      }
+      if (Object.keys(env).length) config.env = env; else delete config.env;
+    }, true);
+
+    const timeoutRow = document.createElement('div'); timeoutRow.className = 'cfg-field';
+    const timeoutLabel = document.createElement('label'); timeoutLabel.textContent = '自动停止超时（秒）'; timeoutRow.appendChild(timeoutLabel);
+    const timeoutDesc = document.createElement('div'); timeoutDesc.className = 'cfg-desc'; timeoutDesc.textContent = '0 表示不限时。'; timeoutRow.appendChild(timeoutDesc);
+    const timeout = document.createElement('input'); timeout.type = 'number'; timeout.min = '0'; timeout.step = '1'; timeout.value = String(config.timeout || 0);
+    timeout.addEventListener('change', () => { const value = Number(timeout.value); if (value > 0) config.timeout = value; else delete config.timeout; });
+    timeoutRow.appendChild(timeout); panel.appendChild(timeoutRow);
   }
 
   /** 渲染某任务的参数配置面板 */
@@ -276,7 +350,35 @@
       br.textContent = '⚠ 该任务 schema 采集失败，无法自动生成表单：' + (schema.error || '');
       panel.appendChild(br);
     } else if (schema && schema.fields && schema.fields.length) {
-      for (const f of schema.fields) buildField(panel, t, f, config);
+      const rowByKey = {};
+      let applyVisibility = () => {};
+      for (const f of schema.fields) rowByKey[f.key] = buildField(panel, t, f, config, () => applyVisibility());
+      applyVisibility = () => {
+        const parentsByChild = {};
+        for (const parent of schema.fields) {
+          const rules = parent.type && typeof parent.type.sub_configs === 'object' ? parent.type.sub_configs : null;
+          if (!rules) continue;
+          for (const keys of Object.values(rules)) {
+            for (const key of (typeof keys === 'string' ? [keys] : (Array.isArray(keys) ? keys : []))) {
+              (parentsByChild[key] = parentsByChild[key] || []).push(parent);
+            }
+          }
+        }
+        const visible = (key, checking) => {
+          if (checking.has(key)) return false;
+          const parents = parentsByChild[key] || [];
+          if (!parents.length) return true;
+          const next = new Set(checking); next.add(key);
+          return parents.every((parent) => {
+            if (!visible(parent.key, next)) return false;
+            const value = config.params && parent.key in config.params ? config.params[parent.key] : parent.value;
+            return activeSubConfigKeys(parent.type, value).includes(key);
+          });
+        };
+        for (const [key, row] of Object.entries(rowByKey)) row.style.display = visible(key, new Set()) ? '' : 'none';
+      };
+      applyVisibility();
+      buildRuntimeFields(panel, config);
       const actions = document.createElement('div');
       actions.className = 'cfg-actions';
       const save = document.createElement('button');
@@ -299,6 +401,12 @@
       e.className = 'cfg-empty';
       e.textContent = '暂无可配置参数（schema 未就绪或该任务无 default_config）。';
       panel.appendChild(e);
+      buildRuntimeFields(panel, config);
+      const actions = document.createElement('div');
+      actions.className = 'cfg-actions';
+      const save = document.createElement('button'); save.textContent = '💾 保存启动设置';
+      save.addEventListener('click', () => vscode.postMessage({ type: 'saveConfig', task: t, config }));
+      actions.appendChild(save); panel.appendChild(actions);
     }
     return panel;
   }
@@ -312,11 +420,19 @@
       card.className = 'task';
       const nm = document.createElement('div');
       nm.className = 'name';
-      nm.textContent = t.displayName;
+      const schema = schemas[taskKey(t)];
+      nm.textContent = schema && schema.displayName ? schema.displayName : t.displayName;
+      if (schema && schema.kind) {
+        const kind = document.createElement('span'); kind.className = 'kind'; kind.textContent = schema.kind === 'trigger' ? '触发任务' : '一次性'; nm.appendChild(kind);
+      }
       nm.title = t.module;
       const cl = document.createElement('div');
       cl.className = 'cls';
       cl.textContent = t.className;
+      const desc = document.createElement('div');
+      desc.className = 'description';
+      desc.textContent = schema && schema.description ? schema.description : '';
+      desc.style.display = desc.textContent ? '' : 'none';
       const launchBtn = document.createElement('button');
       launchBtn.className = 'launch-btn';
       launchBtn.textContent = '▶ 启动';
@@ -337,33 +453,44 @@
         if (!running) return;
         vscode.postMessage({ type: 'stop', task: { module: t.module, className: t.className, displayName: t.displayName } });
       });
-      const schema = schemas[taskKey(t)];
       const cfgToggle = document.createElement('button');
       cfgToggle.className = 'cfg-toggle';
       cfgToggle.textContent = '⚙ 参数';
       const panel = buildConfigPanel(card, t, schema);
+      if (openPanels.has(taskKey(t))) {
+        panel.classList.add('open');
+        cfgToggle.textContent = '▲ 收起参数';
+      }
       cfgToggle.addEventListener('click', () => {
         const open = panel.classList.toggle('open');
+        if (open) openPanels.add(taskKey(t)); else openPanels.delete(taskKey(t));
         cfgToggle.textContent = open ? '▲ 收起参数' : '⚙ 参数';
       });
       card.appendChild(nm);
       card.appendChild(cl);
+      card.appendChild(desc);
       card.appendChild(launchBtn);
       card.appendChild(stopBtn);
       card.appendChild(cfgToggle);
       card.appendChild(panel);
       tasksEl.appendChild(card);
     }
+    setRunning(running, runningTaskKey);
   }
 
-  function setRunning(r) {
+  function setRunning(r, taskOrKey) {
     running = r;
+    if (typeof taskOrKey === 'string') runningTaskKey = taskOrKey;
+    else if (taskOrKey) runningTaskKey = taskKey(taskOrKey);
+    if (!r) runningTaskKey = '';
     for (const b of tasksEl.querySelectorAll('.launch-btn')) {
       b.disabled = r;
-      b.textContent = r ? '⏳ 运行中…' : '▶ 启动';
+      const isCurrent = taskKey({ module: b.dataset.module, className: b.dataset.cls }) === runningTaskKey;
+      b.textContent = r && isCurrent ? '⏳ 运行中…' : '▶ 启动';
     }
     for (const b of tasksEl.querySelectorAll('.stop-btn')) {
-      b.disabled = !r;
+      const isCurrent = taskKey({ module: b.dataset.module, className: b.dataset.cls }) === runningTaskKey;
+      b.disabled = !r || !isCurrent;
     }
   }
 
@@ -385,10 +512,10 @@
         break;
       case 'status': setStatus(msg.level, msg.text); break;
       case 'running':
-        setRunning(msg.running);
-        if (msg.stopping) setStatus('warn', '正在停止任务…');
+        setRunning(msg.running, msg.task);
+        if (msg.stopping) setStatus('warn', msg.timedOut ? '任务已超时，正在停止…' : '正在停止任务…');
         else if (msg.error) setStatus('error', msg.error);
-        else if (msg.stopped) setStatus('warn', '任务已停止，详见输出面板');
+        else if (msg.stopped) setStatus('warn', msg.timedOut ? '任务超时并已停止，详见输出面板' : '任务已停止，详见输出面板');
         else if (msg.running === false && msg.code === 0) setStatus('ok', '任务完成，详见输出面板');
         else if (msg.running === false) setStatus('error', '任务异常结束，详见输出面板');
         break;

@@ -80,18 +80,21 @@ def main():
 
         tasks = []
         seen = set()
-        for t in list(ok.task_executor.onetime_tasks or []) + list(ok.task_executor.trigger_tasks or []):
+        onetime_tasks = list(ok.task_executor.onetime_tasks or [])
+        trigger_tasks = list(ok.task_executor.trigger_tasks or [])
+        for t in onetime_tasks + trigger_tasks:
             module_name = t.__class__.__module__
             cls_name = t.__class__.__name__
             task_key = f"{module_name}::{cls_name}"
             if task_key in seen:
                 continue
             seen.add(task_key)
-            tasks.append((task_key, cls_name, t))
+            task_kind = "trigger" if t in trigger_tasks else "onetime"
+            tasks.append((task_key, cls_name, task_kind, t))
 
         schemas = {}
         broken = []
-        for task_key, cls_name, task in tasks:
+        for task_key, cls_name, task_kind, task in tasks:
             try:
                 default_config = dict(getattr(task, "default_config", {}) or {})
                 config_type = dict(getattr(task, "config_type", {}) or {})
@@ -126,7 +129,12 @@ def main():
                         "type": jt if isinstance(jt, dict) else None,
                         "desc": str(config_description.get(key, "")) if config_description.get(key) else "",
                     })
-                schemas[task_key] = {"fields": fields}
+                schemas[task_key] = {
+                    "fields": fields,
+                    "displayName": str(getattr(task, "name", "") or cls_name),
+                    "description": str(getattr(task, "description", "") or ""),
+                    "kind": task_kind,
+                }
             except Exception as e:
                 broken.append({"task": task_key, "error": f"{type(e).__name__}: {e}"})
                 schemas[task_key] = {"fields": [], "broken": True, "error": f"{type(e).__name__}: {e}"}
