@@ -46,6 +46,18 @@
 - 可为单个任务设置额外命令行参数、环境变量和自动停止超时。
 - 运行日志输出到 **ok-script 任务启动** 输出频道，并支持停止整个子进程树。
 
+### 角色技能管理面板
+
+执行命令 **ok-script Lang Hints: 打开角色技能管理面板**，可在编辑器区打开角色数据库总览：
+
+- 左侧按星级、元素、职业、技能类型、强化组和诊断状态筛选角色。
+- 右侧集中展示角色基础信息、名称多语言、技能说明、倍率、失衡、冷却、技力、基础效果和强化组效果。
+- 强化组同时展示触发条件、触发依赖效果、强化产出效果和可见脉冲标记。
+- 效果索引按 `effects.py` 分类汇总，并反向列出每个效果被哪些角色、技能和强化组引用。
+- 名称本地化页使用类似字符串资源编辑器的矩阵，横向比较全部 locale，突出缺失名称。
+- 数据诊断检查角色主表/技能文件覆盖、重复技能 ID、未知效果 ID、强化声明不一致和缺失语言等问题。
+- 角色 JSON、语言文件、效果定义和诊断位置均可一键在编辑器中打开；源文件保存后面板自动刷新。
+
 ### 模板面板（可视化浏览全部模板）
 
 两种打开方式：
@@ -109,6 +121,10 @@ npx @vscode/vsce package --allow-missing-repository
 | `okLangHints.effectsFile` | `src/data/effects.py` | 技能效果 ID 定义文件（`EffectType` 枚举与 `EFFECT_DESCRIPTIONS`），相对工作区根目录 |
 | `okLangHints.okScriptProjectPath` | 空 | 任务启动器使用的 ok-script 项目根目录；为空时尝试使用当前工作区 |
 | `okLangHints.okScriptPython` | 空 | 任务启动器使用的 Python；为空时优先使用目标项目 `.venv/Scripts/python.exe` |
+| `okLangHints.characterProjectPath` | 空 | 角色技能管理面板的数据项目；为空时使用 `okScriptProjectPath` 或当前工作区 |
+| `okLangHints.characterMasterFile` | `assets/data/characters.json` | 角色主表 JSON |
+| `okLangHints.characterSkillsDirectory` | `assets/data/character_skills` | 角色技能 JSON 目录 |
+| `okLangHints.characterLocaleFile` | `assets/lang/characters.json` | 角色名称多语言 JSON |
 
 **命令**：
 
@@ -116,6 +132,7 @@ npx @vscode/vsce package --allow-missing-repository
 |---|---|---|
 | `ok-script Lang Hints: 打开模板面板` | `Ctrl+Alt+T`（macOS `Cmd+Alt+T`） | 聚焦活动栏中的模板侧边栏视图 |
 | `ok-script Lang Hints: 在编辑器中打开模板面板（大窗口）` | — | 在编辑器区打开大窗口网格视图 |
+| `ok-script Lang Hints: 打开角色技能管理面板` | — | 打开角色、技能、效果、强化组和名称本地化管理页 |
 
 ### 配置示例
 

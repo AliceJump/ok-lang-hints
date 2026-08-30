@@ -16,6 +16,7 @@ import {
   repaintAllGalleries,
 } from './templatePanel';
 import { TaskLauncherViewProvider } from './taskLauncher';
+import { CharacterManagerPanel } from './characterPanel';
 
 export function activate(context: vscode.ExtensionContext): void {
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -218,6 +219,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('okLangHints.showTaskLauncher', () => {
       // 聚焦活动栏中的任务启动视图
       void vscode.commands.executeCommand(`${TaskLauncherViewProvider.viewType}.focus`);
+    }),
+    vscode.commands.registerCommand('okLangHints.openCharacterManager', () => {
+      CharacterManagerPanel.show(context.extensionUri);
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('okLangHints')) {

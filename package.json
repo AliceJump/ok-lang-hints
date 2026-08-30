@@ -35,9 +35,7 @@
   "activationEvents": [
     "onLanguage:python",
     "onLanguage:json",
-    "onLanguage:jsonc",
-    "onView:okLangHints.templateGallery",
-    "onView:okLangHints.taskLauncher"
+    "onLanguage:jsonc"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -56,6 +54,11 @@
         "command": "okLangHints.showTaskLauncher",
         "title": "打开任务启动",
         "category": "ok-script Lang Hints"
+      },
+      {
+        "command": "okLangHints.openCharacterManager",
+        "title": "打开角色技能管理面板",
+        "category": "ok-script Lang Hints"
       }
     ],
     "viewsContainers": {
@@ -73,6 +76,7 @@
           "type": "webview",
           "id": "okLangHints.templateGallery",
           "name": "模板面板",
+          "icon": "media/templates.svg",
           "webviewOptions": {
             "retainContextWhenHidden": true
           }
@@ -81,6 +85,7 @@
           "type": "webview",
           "id": "okLangHints.taskLauncher",
           "name": "任务启动",
+          "icon": "media/task.svg",
           "webviewOptions": {
             "retainContextWhenHidden": true
           }
@@ -167,6 +172,26 @@
           "type": "string",
           "default": "",
           "markdownDescription": "用于运行 ok-script 任务的 Python 解释器路径。留空时自动使用 `<项目路径>/.venv/Scripts/python.exe`（Windows）。"
+        },
+        "okLangHints.characterProjectPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "角色技能管理面板的数据项目根目录。留空时依次使用 `okScriptProjectPath` 和当前工作区。"
+        },
+        "okLangHints.characterMasterFile": {
+          "type": "string",
+          "default": "assets/data/characters.json",
+          "description": "角色主表 JSON，相对于角色数据项目根目录。"
+        },
+        "okLangHints.characterSkillsDirectory": {
+          "type": "string",
+          "default": "assets/data/character_skills",
+          "description": "角色技能 JSON 目录，相对于角色数据项目根目录。"
+        },
+        "okLangHints.characterLocaleFile": {
+          "type": "string",
+          "default": "assets/lang/characters.json",
+          "description": "角色名称多语言 JSON，相对于角色数据项目根目录。"
         }
       }
     }

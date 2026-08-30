@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-__CSP_NONCE__'">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>角色技能管理</title>
+<style>
+  :root {
+    --border: var(--vscode-panel-border, rgba(128,128,128,.28));
+    --muted: var(--vscode-descriptionForeground, rgba(180,180,180,.75));
+    --surface: var(--vscode-editorWidget-background, rgba(128,128,128,.06));
+    --surface2: var(--vscode-sideBar-background, rgba(128,128,128,.05));
+    --selected: var(--vscode-list-activeSelectionBackground, rgba(0,122,204,.28));
+    --selected-fg: var(--vscode-list-activeSelectionForeground, inherit);
+    --hover: var(--vscode-list-hoverBackground, rgba(128,128,128,.12));
+    --accent: var(--vscode-focusBorder, #007acc);
+    --danger: var(--vscode-errorForeground, #f48771);
+    --warning: var(--vscode-editorWarning-foreground, #cca700);
+    --info: var(--vscode-editorInfo-foreground, #75beff);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    color: var(--vscode-editor-foreground);
+    background: var(--vscode-editor-background);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size, 13px);
+    overflow: hidden;
+  }
+  button, input, select {
+    font: inherit;
+    color: inherit;
+  }
+  button {
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--vscode-button-hoverBackground); }
+  button.secondary {
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+  }
+  button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+  button.icon { padding: 4px 7px; min-width: 28px; }
+  input, select {
+    border: 1px solid var(--vscode-input-border, transparent);
+    border-radius: 3px;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    padding: 5px 8px;
+    outline: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  #app { height: 100%; display: flex; flex-direction: column; }
+  .topbar {
+    flex: 0 0 auto;
+    border-bottom: 1px solid var(--border);
+    background: var(--vscode-titleBar-activeBackground, var(--vscode-editor-background));
+  }
+  .title-row {
+    min-height: 42px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 7px 12px;
+  }
+  .title {
+    font-size: 15px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  #project { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .spacer { flex: 1; }
+  #globalSearch { width: min(360px, 35vw); }
+  .tabs { display: flex; gap: 2px; padding: 0 10px; }
+  .tab {
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: var(--muted);
+    padding: 7px 11px 6px;
+  }
+  .tab:hover { background: var(--hover); color: inherit; }
+  .tab.active { border-bottom-color: var(--accent); color: inherit; font-weight: 600; }
+  .badge {
+    display: inline-block;
+    min-width: 18px;
+    margin-left: 5px;
+    border-radius: 10px;
+    padding: 0 5px;
+    background: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground);
+    font-size: 10px;
+    line-height: 17px;
+    text-align: center;
+  }
+  .summary {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: repeat(7, minmax(92px, 1fr));
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .metric {
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--surface);
+    padding: 6px 8px;
+  }
+  .metric-value { font-size: 17px; font-weight: 700; }
+  .metric-label { color: var(--muted); font-size: 10px; margin-top: 1px; }
+  .metric.error .metric-value { color: var(--danger); }
+  .metric.warning .metric-value { color: var(--warning); }
+  .content { flex: 1 1 auto; min-height: 0; position: relative; }
+  .view { display: none; height: 100%; min-height: 0; }
+  .view.active { display: flex; }
+  .split { width: 100%; min-width: 0; }
+  .sidebar {
+    flex: 0 0 300px;
+    min-width: 220px;
+    max-width: 420px;
+    border-right: 1px solid var(--border);
+    background: var(--surface2);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .filters select { min-width: 0; width: 100%; }
+  .filter-check {
+    grid-column: 1 / -1;
+    color: var(--muted);
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .filter-check input { width: auto; }
+  .list-head {
+    display: flex;
+    align-items: center;
+    padding: 6px 9px;
+    color: var(--muted);
+    font-size: 11px;
+    border-bottom: 1px solid var(--border);
+  }
+  .scroll { overflow: auto; min-height: 0; scrollbar-color: var(--vscode-scrollbarSlider-background) transparent; }
+  #characterList { flex: 1 1 auto; }
+  .character-item {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    padding: 7px 9px;
+    border-bottom: 1px solid rgba(128,128,128,.1);
+    cursor: pointer;
+  }
+  .character-item:hover { background: var(--hover); }
+  .character-item.selected { background: var(--selected); color: var(--selected-fg); }
+  .avatar {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-weight: 700;
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  .item-main { min-width: 0; }
+  .item-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-sub { color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-count { color: var(--muted); font-size: 10px; }
+  .issue-dot {
+    display: inline-block;
+    min-width: 16px;
+    padding: 0 4px;
+    margin-left: 4px;
+    text-align: center;
+    border-radius: 8px;
+    color: #fff;
+    background: var(--warning);
+  }
+  .issue-dot.error { background: var(--danger); }
+  .detail {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  #characterDetail { flex: 1 1 auto; padding: 12px 14px 28px; }
+  .character-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: start;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+  }
+  .character-title { font-size: 23px; font-weight: 700; }
+  .character-id { color: var(--muted); font-family: var(--vscode-editor-font-family); font-size: 11px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    padding: 2px 7px;
+    font-size: 11px;
+  }
+  .chip.effect { cursor: pointer; font-family: var(--vscode-editor-font-family); }
+  .chip.effect:hover { border-color: var(--accent); }
+  .chip.unknown { border-color: var(--danger); color: var(--danger); }
+  .chip.inferred { border-style: dashed; }
+  .locales-inline {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+    gap: 4px 10px;
+    margin-top: 8px;
+  }
+  .locale-name { display: flex; gap: 6px; min-width: 0; font-size: 11px; }
+  .locale-key { color: var(--muted); width: 48px; flex: 0 0 auto; }
+  .locale-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .section-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    margin: 13px 0 7px;
+  }
+  .skill-card {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  .skill-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .skill-name { font-size: 14px; font-weight: 700; }
+  .skill-id { color: var(--muted); font-family: var(--vscode-editor-font-family); font-size: 10px; }
+  .skill-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+  .skill-body { padding: 8px 10px 10px; }
+  .description { line-height: 1.55; white-space: pre-wrap; }
+  .kv-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 5px 12px;
+    margin: 7px 0;
+    font-size: 11px;
+  }
+  .kv-key { color: var(--muted); margin-right: 5px; }
+  .effect-line { margin-top: 7px; }
+  .line-label { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+  .enhancement {
+    border-left: 3px solid var(--accent);
+    padding: 7px 9px;
+    margin-top: 8px;
+    background: color-mix(in srgb, var(--accent) 7%, transparent);
+    border-radius: 0 4px 4px 0;
+  }
+  .enhancement-name { font-weight: 700; }
+  .enhancement-trigger { margin-top: 4px; line-height: 1.4; }
+  .pulse { color: var(--info); font-size: 10px; margin-left: 5px; }
+  .empty {
+    padding: 36px 20px;
+    text-align: center;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+  .table-wrap { width: 100%; overflow: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 11px; }
+  th, td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { position: sticky; top: 0; z-index: 2; background: var(--vscode-editorWidget-background); white-space: nowrap; }
+  td.sticky, th.sticky { position: sticky; left: 0; z-index: 3; background: var(--vscode-editor-background); min-width: 175px; }
+  th.sticky { z-index: 4; background: var(--vscode-editorWidget-background); }
+  .missing-cell { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+  .effect-toolbar, .issues-toolbar, .locale-toolbar {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 7px;
+    align-items: center;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .effect-toolbar input, .issues-toolbar input { flex: 1; min-width: 160px; }
+  #effectList, #issueList { flex: 1 1 auto; padding: 8px 10px 24px; }
+  .effect-card {
+    display: grid;
+    grid-template-columns: minmax(210px, .8fr) minmax(260px, 1.2fr) 72px;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+    padding: 8px 7px;
+  }
+  .effect-card:hover { background: var(--hover); }
+  .effect-id { font-family: var(--vscode-editor-font-family); font-weight: 700; word-break: break-all; }
+  .effect-desc { line-height: 1.4; }
+  .usage-list { margin-top: 5px; color: var(--muted); font-size: 10px; }
+  .usage { cursor: pointer; margin: 2px 0; }
+  .usage:hover { color: inherit; text-decoration: underline; }
+  .severity { font-weight: 700; text-transform: uppercase; font-size: 10px; }
+  .severity.error { color: var(--danger); }
+  .severity.warning { color: var(--warning); }
+  .severity.info { color: var(--info); }
+  .issue-row {
+    display: grid;
+    grid-template-columns: 62px 145px minmax(0, 1fr) auto;
+    gap: 9px;
+    align-items: start;
+    padding: 7px 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .issue-row:hover { background: var(--hover); }
+  .issue-code { color: var(--muted); font-family: var(--vscode-editor-font-family); font-size: 10px; }
+  #loading, #fatal {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--vscode-editor-background) 92%, transparent);
+    padding: 24px;
+    text-align: center;
+  }
+  #loading.show, #fatal.show { display: flex; }
+  #fatal { color: var(--danger); }
+  @media (max-width: 900px) {
+    .summary { grid-template-columns: repeat(4, 1fr); }
+    .sidebar { flex-basis: 240px; }
+    .effect-card { grid-template-columns: 1fr; }
+    .issue-row { grid-template-columns: 60px 120px minmax(0,1fr); }
+    .issue-row button { grid-column: 3; justify-self: start; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="title-row">
+      <div class="title">角色技能管理</div>
+      <div id="project"></div>
+      <div class="spacer"></div>
+      <input id="globalSearch" type="search" placeholder="搜索角色、技能、效果、描述…">
+      <button id="refresh" class="secondary icon" title="刷新数据">↻</button>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="characters">角色与技能<span id="charactersBadge" class="badge">0</span></button>
+      <button class="tab" data-tab="effects">效果索引<span id="effectsBadge" class="badge">0</span></button>
+      <button class="tab" data-tab="locales">名称本地化<span id="localesBadge" class="badge">0</span></button>
+      <button class="tab" data-tab="issues">数据诊断<span id="issuesBadge" class="badge">0</span></button>
+    </nav>
+  </header>
+  <section id="summary" class="summary"></section>
+  <main class="content">
+    <section id="charactersView" class="view active split">
+      <aside class="sidebar">
+        <div class="filters">
+          <select id="starFilter"><option value="">全部星级</option></select>
+          <select id="elementFilter"><option value="">全部元素</option></select>
+          <select id="professionFilter"><option value="">全部职业</option></select>
+          <select id="skillTypeFilter"><option value="">全部技能类型</option></select>
+          <label class="filter-check"><input id="enhancementOnly" type="checkbox">仅显示含强化组的角色</label>
+          <label class="filter-check"><input id="issueOnly" type="checkbox">仅显示存在诊断的角色</label>
+        </div>
+        <div class="list-head"><span id="characterCount">0 个角色</span><span class="spacer"></span><span>技能 / 强化</span></div>
+        <div id="characterList" class="scroll"></div>
+      </aside>
+      <section class="detail"><div id="characterDetail" class="scroll"></div></section>
+    </section>
+    <section id="effectsView" class="view" style="flex-direction:column">
+      <div class="effect-toolbar">
+        <input id="effectSearch" type="search" placeholder="搜索效果 ID、描述、角色或技能…">
+        <select id="effectCategory"><option value="">全部分类</option></select>
+        <select id="effectUsage"><option value="">全部效果</option><option value="used">仅已引用</option><option value="unused">仅未引用</option><option value="unknown">仅未知</option></select>
+        <span id="effectCount" class="item-sub"></span>
+      </div>
+      <div id="effectList" class="scroll"></div>
+    </section>
+    <section id="localesView" class="view" style="flex-direction:column">
+      <div class="locale-toolbar"><span>角色名称多语言矩阵</span><span class="item-sub">空白单元格表示缺失，可点击角色打开语言源文件。</span></div>
+      <div id="localeTable" class="table-wrap"></div>
+    </section>
+    <section id="issuesView" class="view" style="flex-direction:column">
+      <div class="issues-toolbar">
+        <input id="issueSearch" type="search" placeholder="搜索诊断信息…">
+        <select id="issueSeverity"><option value="">全部级别</option><option value="error">错误</option><option value="warning">警告</option><option value="info">信息</option></select>
+        <span id="issueCount" class="item-sub"></span>
+      </div>
+      <div id="issueList" class="scroll"></div>
+    </section>
+    <div id="loading"><div>正在读取角色、技能、效果与多语言数据…</div></div>
+    <div id="fatal"></div>
+  </main>
+</div>
+<script nonce="__CSP_NONCE__">
+  const vscode = acquireVsCodeApi();
+  const previousState = vscode.getState() || {};
+  let snapshot = null;
+  let activeTab = previousState.activeTab || 'characters';
+  let selectedCharacterId = previousState.selectedCharacterId || '';
+
+  const $ = (id) => document.getElementById(id);
+  const text = (value) => value === undefined || value === null ? '' : String(value);
+  const normalized = (value) => text(value).toLowerCase();
+  const currentQuery = () => normalized($('globalSearch').value.trim());
+  const saveState = () => vscode.setState({ activeTab, selectedCharacterId });
+
+  function clear(element) { element.replaceChildren(); }
+  function element(tag, className, content) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (content !== undefined) node.textContent = text(content);
+    return node;
+  }
+  function button(label, className, handler, title) {
+    const node = element('button', className, label);
+    if (title) node.title = title;
+    node.addEventListener('click', handler);
+    return node;
+  }
+  function postOpen(kind, extra) { vscode.postMessage(Object.assign({ type: 'openSource', kind }, extra || {})); }
+  function postCopy(value) { vscode.postMessage({ type: 'copy', text: value }); }
+
+  function setTab(tab) {
+    activeTab = tab;
+    for (const node of document.querySelectorAll('.tab')) node.classList.toggle('active', node.dataset.tab === tab);
+    for (const node of document.querySelectorAll('.view')) node.classList.remove('active');
+    $(tab + 'View').classList.add('active');
+    saveState();
+    applyAllFilters();
+  }
+
+  function renderSummary() {
+    const summary = snapshot.summary;
+    const metrics = [
+      ['角色', summary.characters, ''],
+      ['技能', summary.skills, ''],
+      ['强化组', summary.enhancements, ''],
+      ['效果引用', summary.effectReferences, ''],
+      ['效果定义', summary.definedEffects, ''],
+      ['错误', summary.errors, summary.errors ? 'error' : ''],
+      ['警告', summary.warnings, summary.warnings ? 'warning' : ''],
+    ];
+    clear($('summary'));
+    for (const [label, value, className] of metrics) {
+      const card = element('div', 'metric ' + className);
+      card.appendChild(element('div', 'metric-value', value));
+      card.appendChild(element('div', 'metric-label', label));
+      $('summary').appendChild(card);
+    }
+    $('charactersBadge').textContent = summary.characters;
+    $('effectsBadge').textContent = snapshot.effects.length;
+    $('localesBadge').textContent = summary.locales.length;
+    $('issuesBadge').textContent = summary.errors + summary.warnings + summary.infos;
+  }
+
+  function fillSelect(select, values, label) {
+    const selected = select.value;
+    select.replaceChildren(new Option(label, ''));
+    for (const value of [...new Set(values.filter(Boolean))].sort((a, b) => text(a).localeCompare(text(b)))) select.appendChild(new Option(value, value));
+    if ([...select.options].some((option) => option.value === selected)) select.value = selected;
+  }
+
+  function setupFilters() {
+    fillSelect($('starFilter'), snapshot.characters.map((item) => item.star ? String(item.star) : '未定'), '全部星级');
+    fillSelect($('elementFilter'), snapshot.characters.map((item) => item.element || '未定'), '全部元素');
+    fillSelect($('professionFilter'), snapshot.characters.map((item) => item.profession || '未定'), '全部职业');
+    fillSelect($('skillTypeFilter'), snapshot.characters.flatMap((item) => item.skills.map((skill) => skill.skillType)), '全部技能类型');
+    fillSelect($('effectCategory'), snapshot.effects.map((item) => item.category), '全部分类');
+  }
+
+  function characterHaystack(character) {
+    const localeText = Object.values(character.locales || {}).join(' ');
+    const skillText = character.skills.map((skill) => [
+      skill.skillId, skill.name, skill.skillType, skill.element, skill.description,
+      ...skill.effects.map((effect) => effect.effectId),
+      ...skill.enhancements.flatMap((enhancement) => [
+        enhancement.name, enhancement.triggerText, enhancement.enhancementEffect,
+        ...enhancement.triggerEffects.map((effect) => effect.effectId),
+        ...enhancement.effects.map((effect) => effect.effectId),
+      ]),
+    ].join(' ')).join(' ');
+    return normalized([character.characterId, character.name, character.master?.en, localeText, character.element, character.profession, character.weaponType, skillText].join(' '));
+  }
+
+  function filteredCharacters() {
+    const query = currentQuery();
+    const star = $('starFilter').value;
+    const elementFilter = $('elementFilter').value;
+    const profession = $('professionFilter').value;
+    const skillType = $('skillTypeFilter').value;
+    return snapshot.characters.filter((character) => {
+      if (query && !characterHaystack(character).includes(query)) return false;
+      if (star && String(character.star || '未定') !== star) return false;
+      if (elementFilter && (character.element || '未定') !== elementFilter) return false;
+      if (profession && (character.profession || '未定') !== profession) return false;
+      if (skillType && !character.skills.some((skill) => skill.skillType === skillType)) return false;
+      if ($('enhancementOnly').checked && !character.skills.some((skill) => skill.enhancements.length)) return false;
+      if ($('issueOnly').checked && !character.issueCount) return false;
+      return true;
+    });
+  }
+
+  function renderCharacterList() {
+    const characters = filteredCharacters();
+    $('characterCount').textContent = characters.length + ' / ' + snapshot.characters.length + ' 个角色';
+    clear($('characterList'));
+    if (!characters.length) {
+      $('characterList').appendChild(element('div', 'empty', '没有匹配的角色'));
+      renderCharacterDetail(null);
+      return;
+    }
+    if (!characters.some((item) => item.characterId === selectedCharacterId)) selectedCharacterId = characters[0].characterId;
+    for (const character of characters) {
+      const item = element('div', 'character-item' + (character.characterId === selectedCharacterId ? ' selected' : ''));
+      item.dataset.id = character.characterId;
+      item.appendChild(element('div', 'avatar', character.name.slice(0, 1)));
+      const main = element('div', 'item-main');
+      main.appendChild(element('div', 'item-name', character.name));
+      main.appendChild(element('div', 'item-sub', [character.star ? character.star + '★' : '星级未定', character.element || '元素未定', character.profession || '职业未定'].join(' · ')));
+      item.appendChild(main);
+      const stats = element('div', 'item-count', character.skills.length + ' / ' + character.skills.reduce((sum, skill) => sum + skill.enhancements.length, 0));
+      if (character.issueCount) stats.appendChild(element('span', 'issue-dot ' + (character.errorCount ? 'error' : ''), character.issueCount));
+      item.appendChild(stats);
+      item.addEventListener('click', () => {
+        selectedCharacterId = character.characterId;
+        saveState();
+        renderCharacterList();
+        renderCharacterDetail(character);
+      });
+      $('characterList').appendChild(item);
+    }
+    renderCharacterDetail(characters.find((item) => item.characterId === selectedCharacterId) || characters[0]);
+  }
+
+  function makeChip(label, className, title, onClick) {
+    const chip = element('span', 'chip ' + (className || ''), label);
+    if (title) chip.title = title;
+    if (onClick) chip.addEventListener('click', onClick);
+    return chip;
+  }
+
+  function effectDescription(effectId) {
+    const effect = snapshot.effects.find((item) => item.id === effectId);
+    return effect ? effect.description : '未定义效果';
+  }
+
+  function focusEffect(effectId) {
+    setTab('effects');
+    $('effectSearch').value = effectId;
+    renderEffects();
+  }
+
+  function appendEffectChips(container, effects) {
+    if (!effects.length) {
+      container.appendChild(element('span', 'item-sub', '无'));
+      return;
+    }
+    for (const effect of effects) {
+      const suffix = [
+        effect.value !== undefined && effect.value !== null ? '值=' + effect.value : '',
+        effect.duration !== undefined && effect.duration !== null && effect.duration !== '' ? 'duration=' + effect.duration : '',
+        effect.count !== undefined ? 'count=' + effect.count : '',
+        effect.target ? 'target=' + effect.target : '',
+      ].filter(Boolean).join(' · ');
+      const title = effectDescription(effect.effectId) + (suffix ? '\n' + suffix : '') + (effect.inferred ? '\n由触发文本推断' : '');
+      container.appendChild(makeChip(effect.effectId, 'effect ' + (!effect.known ? 'unknown ' : '') + (effect.inferred ? 'inferred' : ''), title, () => focusEffect(effect.effectId)));
+    }
+  }
+
+  function renderCharacterDetail(character) {
+    clear($('characterDetail'));
+    if (!character) {
+      $('characterDetail').appendChild(element('div', 'empty', '从左侧选择一个角色'));
+      return;
+    }
+    const header = element('div', 'character-header');
+    const left = element('div');
+    left.appendChild(element('div', 'character-title', character.name));
+    left.appendChild(element('div', 'character-id', character.characterId + (character.master?.en ? ' · ' + character.master.en : '')));
+    const meta = element('div', 'chips');
+    meta.appendChild(makeChip(character.star ? character.star + '★' : '星级未定'));
+    meta.appendChild(makeChip(character.element || '元素未定'));
+    meta.appendChild(makeChip(character.profession || '职业未定'));
+    meta.appendChild(makeChip(character.weaponType || '武器未定'));
+    meta.appendChild(makeChip(character.skills.length + ' 个技能'));
+    meta.appendChild(makeChip(character.skills.reduce((sum, skill) => sum + skill.enhancements.length, 0) + ' 个强化组'));
+    left.appendChild(meta);
+    const locales = element('div', 'locales-inline');
+    for (const locale of snapshot.summary.locales.slice(0, 6)) {
+      const row = element('div', 'locale-name');
+      row.appendChild(element('span', 'locale-key', locale));
+      row.appendChild(element('span', 'locale-value', character.locales[locale] || '—'));
+      locales.appendChild(row);
+    }
+    left.appendChild(locales);
+    header.appendChild(left);
+    const actions = element('div');
+    actions.appendChild(button('打开角色 JSON', 'secondary', () => postOpen('character', { characterId: character.characterId }), '在编辑器中打开源文件'));
+    header.appendChild(actions);
+    $('characterDetail').appendChild(header);
+
+    if (!character.skills.length) {
+      $('characterDetail').appendChild(element('div', 'empty', '该角色尚无技能数据'));
+      return;
+    }
+    $('characterDetail').appendChild(element('div', 'section-title', '技能与强化效果'));
+    for (const skill of character.skills) {
+      const card = element('article', 'skill-card');
+      const head = element('div', 'skill-head');
+      const title = element('div');
+      title.appendChild(element('div', 'skill-name', skill.name));
+      const id = element('div', 'skill-id', skill.skillId);
+      id.title = '单击复制技能 ID';
+      id.style.cursor = 'pointer';
+      id.addEventListener('click', () => postCopy(skill.skillId));
+      title.appendChild(id);
+      head.appendChild(title);
+      const skillMeta = element('div', 'skill-meta');
+      skillMeta.appendChild(makeChip(skill.skillType));
+      if (skill.element) skillMeta.appendChild(makeChip(skill.element));
+      if (skill.hasEnhancement) skillMeta.appendChild(makeChip('强化态'));
+      skillMeta.appendChild(button('打开', 'secondary icon', () => postOpen('character', { characterId: character.characterId, skillId: skill.skillId }), '打开并定位到技能'));
+      head.appendChild(skillMeta);
+      card.appendChild(head);
+      const body = element('div', 'skill-body');
+      if (skill.description) body.appendChild(element('div', 'description', skill.description));
+      const kv = element('div', 'kv-grid');
+      const values = [
+        ['倍率', skill.damageMultiplier], ['失衡', skill.staggerValue || ''], ['冷却', skill.cooldown], ['技力', skill.spiritCost || ''],
+      ].filter((entry) => entry[1] !== '');
+      for (const [key, value] of values) {
+        const node = element('div');
+        node.appendChild(element('span', 'kv-key', key));
+        node.appendChild(element('span', '', value));
+        kv.appendChild(node);
+      }
+      if (values.length) body.appendChild(kv);
+      const effects = element('div', 'effect-line');
+      effects.appendChild(element('div', 'line-label', '基础效果'));
+      const effectChips = element('div', 'chips');
+      appendEffectChips(effectChips, skill.effects);
+      effects.appendChild(effectChips);
+      body.appendChild(effects);
+      for (const enhancement of skill.enhancements) {
+        const block = element('section', 'enhancement');
+        const name = element('div', 'enhancement-name', enhancement.name);
+        if (enhancement.visiblePulse) name.appendChild(element('span', 'pulse', '可见脉冲'));
+        block.appendChild(name);
+        if (enhancement.triggerText) block.appendChild(element('div', 'enhancement-trigger', enhancement.triggerText));
+        if (enhancement.enhancementEffect) block.appendChild(element('div', 'item-sub', enhancement.enhancementEffect));
+        const triggerLine = element('div', 'effect-line');
+        triggerLine.appendChild(element('div', 'line-label', '触发依赖效果'));
+        const triggerChips = element('div', 'chips');
+        appendEffectChips(triggerChips, enhancement.triggerEffects);
+        triggerLine.appendChild(triggerChips);
+        block.appendChild(triggerLine);
+        const outputLine = element('div', 'effect-line');
+        outputLine.appendChild(element('div', 'line-label', '强化产出效果'));
+        const outputChips = element('div', 'chips');
+        appendEffectChips(outputChips, enhancement.effects);
+        outputLine.appendChild(outputChips);
+        block.appendChild(outputLine);
+        body.appendChild(block);
+      }
+      card.appendChild(body);
+      $('characterDetail').appendChild(card);
+    }
+  }
+
+  function effectHaystack(effect) {
+    return normalized([effect.id, effect.description, effect.category, ...effect.usages.flatMap((usage) => [usage.characterName, usage.skillName, usage.enhancementName, usage.scope])].join(' '));
+  }
+
+  function renderEffects() {
+    if (!snapshot) return;
+    const query = normalized($('effectSearch').value.trim() || (activeTab === 'effects' ? $('globalSearch').value.trim() : ''));
+    const category = $('effectCategory').value;
+    const usage = $('effectUsage').value;
+    const effects = snapshot.effects.filter((effect) => {
+      if (query && !effectHaystack(effect).includes(query)) return false;
+      if (category && effect.category !== category) return false;
+      if (usage === 'used' && !effect.usages.length) return false;
+      if (usage === 'unused' && effect.usages.length) return false;
+      if (usage === 'unknown' && effect.defined) return false;
+      return true;
+    });
+    $('effectCount').textContent = effects.length + ' / ' + snapshot.effects.length + ' 个效果';
+    clear($('effectList'));
+    if (!effects.length) {
+      $('effectList').appendChild(element('div', 'empty', '没有匹配的效果'));
+      return;
+    }
+    for (const effect of effects) {
+      const card = element('div', 'effect-card');
+      const left = element('div');
+      const id = element('div', 'effect-id', effect.id);
+      id.style.cursor = 'pointer'; id.title = '单击复制效果 ID'; id.addEventListener('click', () => postCopy(effect.id));
+      left.appendChild(id);
+      left.appendChild(element('div', 'item-sub', effect.category + (effect.defined ? '' : ' · 未定义')));
+      const usageList = element('div', 'usage-list');
+      const shown = effect.usages.slice(0, 8);
+      for (const usageItem of shown) {
+        const label = usageItem.characterName + ' / ' + usageItem.skillName + (usageItem.enhancementName ? ' / ' + usageItem.enhancementName : '') + ' · ' + usageItem.scope;
+        const node = element('div', 'usage', label);
+        node.addEventListener('click', () => {
+          selectedCharacterId = usageItem.characterId;
+          $('globalSearch').value = '';
+          for (const id of ['starFilter', 'elementFilter', 'professionFilter', 'skillTypeFilter']) $(id).value = '';
+          $('enhancementOnly').checked = false;
+          $('issueOnly').checked = false;
+          setTab('characters');
+          renderCharacterList();
+        });
+        usageList.appendChild(node);
+      }
+      if (effect.usages.length > shown.length) usageList.appendChild(element('div', 'item-sub', '另有 ' + (effect.usages.length - shown.length) + ' 处引用'));
+      left.appendChild(usageList);
+      card.appendChild(left);
+      card.appendChild(element('div', 'effect-desc', effect.description));
+      card.appendChild(button('打开定义', 'secondary', () => postOpen('effects', { effectId: effect.id })));
+      $('effectList').appendChild(card);
+    }
+  }
+
+  function renderLocales() {
+    if (!snapshot) return;
+    const query = currentQuery();
+    const characters = snapshot.characters.filter((character) => !query || characterHaystack(character).includes(query));
+    clear($('localeTable'));
+    const table = element('table');
+    const head = element('thead');
+    const headRow = element('tr');
+    headRow.appendChild(element('th', 'sticky', '角色 / ID'));
+    for (const locale of snapshot.summary.locales) headRow.appendChild(element('th', '', locale));
+    head.appendChild(headRow); table.appendChild(head);
+    const body = element('tbody');
+    for (const character of characters) {
+      const row = element('tr');
+      const first = element('td', 'sticky');
+      const name = element('div', 'item-name', character.name);
+      name.style.cursor = 'pointer'; name.title = '打开角色名称语言文件';
+      name.addEventListener('click', () => postOpen('locale', { characterId: character.characterId }));
+      first.appendChild(name);
+      first.appendChild(element('div', 'item-sub', character.characterId));
+      row.appendChild(first);
+      for (const locale of snapshot.summary.locales) {
+        const value = character.locales[locale] || '';
+        row.appendChild(element('td', value ? '' : 'missing-cell', value || '缺失'));
+      }
+      body.appendChild(row);
+    }
+    table.appendChild(body); $('localeTable').appendChild(table);
+  }
+
+  function sourcePayload(source) {
+    if (!source) return null;
+    return {
+      kind: source.kind,
+      characterId: source.characterId,
+      fileName: source.fileName,
+      effectId: source.effectId,
+      skillId: source.skillId,
+    };
+  }
+
+  function renderIssues() {
+    if (!snapshot) return;
+    const query = normalized($('issueSearch').value.trim() || (activeTab === 'issues' ? $('globalSearch').value.trim() : ''));
+    const severity = $('issueSeverity').value;
+    const issues = snapshot.issues.filter((issue) => {
+      if (severity && issue.severity !== severity) return false;
+      if (query && !normalized([issue.code, issue.message, issue.source?.characterId, issue.source?.skillId, issue.source?.effectId].join(' ')).includes(query)) return false;
+      return true;
+    });
+    $('issueCount').textContent = issues.length + ' / ' + snapshot.issues.length + ' 条诊断';
+    clear($('issueList'));
+    if (!issues.length) {
+      $('issueList').appendChild(element('div', 'empty', snapshot.issues.length ? '没有匹配的诊断' : '未发现数据问题'));
+      return;
+    }
+    for (const issue of issues) {
+      const row = element('div', 'issue-row');
+      row.appendChild(element('div', 'severity ' + issue.severity, issue.severity));
+      row.appendChild(element('div', 'issue-code', issue.code));
+      row.appendChild(element('div', '', issue.message));
+      const payload = sourcePayload(issue.source);
+      if (payload) row.appendChild(button('打开源文件', 'secondary', () => postOpen(payload.kind, payload)));
+      else row.appendChild(element('span'));
+      $('issueList').appendChild(row);
+    }
+  }
+
+  function applyAllFilters() {
+    if (!snapshot) return;
+    if (activeTab === 'characters') renderCharacterList();
+    else if (activeTab === 'effects') renderEffects();
+    else if (activeTab === 'locales') renderLocales();
+    else if (activeTab === 'issues') renderIssues();
+  }
+
+  function renderData(data) {
+    snapshot = data;
+    $('project').textContent = data.projectDir;
+    $('fatal').classList.remove('show');
+    $('loading').classList.remove('show');
+    renderSummary();
+    setupFilters();
+    if (!selectedCharacterId || !data.characters.some((item) => item.characterId === selectedCharacterId)) selectedCharacterId = data.characters[0]?.characterId || '';
+    setTab(activeTab);
+  }
+
+  for (const tab of document.querySelectorAll('.tab')) tab.addEventListener('click', () => setTab(tab.dataset.tab));
+  $('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
+  $('globalSearch').addEventListener('input', applyAllFilters);
+  for (const id of ['starFilter', 'elementFilter', 'professionFilter', 'skillTypeFilter', 'enhancementOnly', 'issueOnly']) $(id).addEventListener('change', renderCharacterList);
+  for (const id of ['effectSearch', 'effectCategory', 'effectUsage']) $(id).addEventListener(id === 'effectSearch' ? 'input' : 'change', renderEffects);
+  $('issueSearch').addEventListener('input', renderIssues);
+  $('issueSeverity').addEventListener('change', renderIssues);
+
+  window.addEventListener('message', (event) => {
+    const message = event.data;
+    if (message.type === 'loading') {
+      $('project').textContent = message.projectDir || '';
+      $('loading').classList.add('show');
+      $('fatal').classList.remove('show');
+    } else if (message.type === 'data') {
+      renderData(message.snapshot);
+    } else if (message.type === 'error') {
+      $('loading').classList.remove('show');
+      $('fatal').textContent = message.text || '加载失败';
+      $('fatal').classList.add('show');
+    }
+  });
+
+  vscode.postMessage({ type: 'ready' });
+</script>
+</body>
+</html>
