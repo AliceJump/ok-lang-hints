@@ -105,6 +105,28 @@
   }
   .cfg-actions button { flex: 1; }
   .cfg-section-title { font-size: 11px; font-weight: 700; opacity: .75; margin: 10px 0 6px; }
+  .cfg-fields { display: flex; flex-direction: column; gap: 2px; }
+  .cfg-group {
+    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,.22));
+    border-radius: 5px;
+    margin: 4px 0;
+    overflow: hidden;
+  }
+  .cfg-group-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    background: var(--vscode-sideBarSectionHeader-background, rgba(128,128,128,.08));
+  }
+  .cfg-group-header .cfg-field { flex: 1; margin: 0; min-width: 0; }
+  .cfg-group-title { flex: 1; font-size: 12px; font-weight: 600; }
+  .cfg-group-count { opacity: .55; font-size: 10px; font-weight: 400; margin-left: 4px; }
+  .cfg-group-toggle { flex: 0 0 auto; min-width: 28px; padding: 3px 7px; }
+  .cfg-group-body { display: none; padding: 5px 7px 5px 12px; }
+  .cfg-group.open > .cfg-group-body { display: block; }
+  .cfg-json-error { border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important; }
+  .cfg-json-hint { margin-top: 3px; font-size: 10px; opacity: .6; }
   .cfg-broken { opacity: .7; font-size: 12px; margin-top: 6px; }
   .cfg-empty { opacity: .6; font-size: 12px; margin-top: 6px; }
   .status { margin-top: 8px; padding: 6px 8px; border-radius: 4px; font-size: 12px; }
@@ -134,6 +156,7 @@
   let currentTasks = [];
   let runningTaskKey = '';
   const openPanels = new Set();
+  const openConfigGroups = new Map();
 
   function setStatus(level, text) {
     if (!text) { statusEl.style.display = 'none'; return; }
@@ -171,8 +194,32 @@
     const options = Array.isArray(typeMeta.options) ? typeMeta.options : [];
     const optionsAvailable = Array.isArray(typeMeta.options_available) ? typeMeta.options_available : [];
 
-    // 1) drop_down（显式或仅声明 options）：下拉
-    if ((typeName === 'drop_down' || (!typeName && options.length && !Array.isArray(rawValue))) && options.length) {
+    // 1) cascade_drop_down：按分类分组选项
+    if (typeName === 'cascade_drop_down' && typeMeta.options && typeof typeMeta.options === 'object') {
+      const sel = document.createElement('select');
+      let selected = false;
+      for (const [category, values] of Object.entries(typeMeta.options)) {
+        if (!Array.isArray(values)) continue;
+        const group = document.createElement('optgroup');
+        group.label = String((typeMeta.labels && typeMeta.labels[category]) || category);
+        for (const value of values) {
+          const option = document.createElement('option');
+          option.value = JSON.stringify(value);
+          option.textContent = String(value);
+          if (String(value) === String(rawValue)) { option.selected = true; selected = true; }
+          group.appendChild(option);
+        }
+        sel.appendChild(group);
+      }
+      if (!selected && rawValue !== undefined && rawValue !== null) {
+        const group = document.createElement('optgroup'); group.label = '当前值';
+        const option = document.createElement('option'); option.value = JSON.stringify(rawValue); option.textContent = String(rawValue); option.selected = true;
+        group.appendChild(option); sel.insertBefore(group, sel.firstChild);
+      }
+      sel.addEventListener('change', () => { try { setValue(JSON.parse(sel.value)); } catch {} });
+      row.appendChild(sel);
+    // 2) drop_down（显式或仅声明 options）：下拉
+    } else if ((typeName === 'drop_down' || (!typeName && options.length && !Array.isArray(rawValue))) && options.length) {
       const sel = document.createElement('select');
       const cur = String(rawValue === undefined ? '' : rawValue);
       let hasCur = false;
@@ -195,7 +242,7 @@
       });
       row.appendChild(sel);
     } else if (typeof rawValue === 'boolean') {
-      // 2) 布尔：开关
+      // 3) 布尔：开关
       const wrap = document.createElement('label');
       wrap.style.display = 'flex'; wrap.style.alignItems = 'center'; wrap.style.gap = '6px';
       const cb = document.createElement('input');
@@ -208,7 +255,7 @@
       wrap.appendChild(cb); wrap.appendChild(t2);
       row.appendChild(wrap);
     } else if (typeof rawValue === 'number') {
-      // 3) 数字：数字框
+      // 4) 数字：数字框
       const inp = document.createElement('input');
       inp.type = 'number';
       inp.value = String(rawValue);
@@ -222,7 +269,7 @@
       });
       row.appendChild(inp);
     } else if (Array.isArray(rawValue) && (typeName === 'multi_selection' || (!typeName && options.length)) && options.length) {
-      // 4) multi_selection：多选下拉（多选框）
+      // 5) multi_selection：多选下拉（多选框）
       const wrap = document.createElement('div');
       const sel = document.createElement('select');
       sel.multiple = true;
@@ -244,8 +291,24 @@
       });
       wrap.appendChild(sel); wrap.appendChild(hint);
       row.appendChild(wrap);
+    } else if (typeName === 'cond_sequence_editor' || (Array.isArray(rawValue) && rawValue.some((item) => item && typeof item === 'object'))) {
+      // 6) 结构化列表：JSON 编辑，保留条件序列对象结构
+      const inp = document.createElement('textarea');
+      inp.value = JSON.stringify(Array.isArray(rawValue) ? rawValue : [], null, 2);
+      const hint = document.createElement('div'); hint.className = 'cfg-json-hint'; hint.textContent = 'JSON 数组；支持条件对象与动作序列。';
+      inp.addEventListener('change', () => {
+        try {
+          const parsed = JSON.parse(inp.value);
+          if (!Array.isArray(parsed)) throw new Error();
+          inp.classList.remove('cfg-json-error');
+          setValue(parsed);
+        } catch {
+          inp.classList.add('cfg-json-error');
+        }
+      });
+      row.appendChild(inp); row.appendChild(hint);
     } else if (Array.isArray(rawValue)) {
-      // 5) 普通/可排序 list：每行一项，避免值本身含逗号时被破坏
+      // 7) 普通/可排序 list：每行一项，避免值本身含逗号时被破坏
       const inp = document.createElement('textarea');
       inp.value = (Array.isArray(rawValue) ? rawValue : []).join('\n');
       if (optionsAvailable.length) {
@@ -256,13 +319,13 @@
       });
       row.appendChild(inp);
     } else if (typeof rawValue === 'string' && (typeName === 'text_edit' || rawValue.includes('\n') || rawValue.length > 80)) {
-      // 6) 多行或长文本
+      // 8) 多行或长文本
       const inp = document.createElement('textarea');
       inp.value = rawValue;
       inp.addEventListener('change', () => setValue(inp.value));
       row.appendChild(inp);
     } else {
-      // 7) 其他（str 等）：文本框
+      // 9) 其他（str 等）：文本框
       const inp = document.createElement('input');
       inp.type = 'text';
       inp.value = rawValue === undefined || rawValue === null ? '' : String(rawValue);
@@ -294,6 +357,24 @@
       for (const key of keys) if (!active.includes(key)) active.push(key);
     }
     return active;
+  }
+
+  function fieldValue(field, config) {
+    return config.params && field.key in config.params
+      ? config.params[field.key]
+      : (field.value !== undefined ? field.value : field.default);
+  }
+
+  function allSubConfigKeys(typeMeta) {
+    const rules = typeMeta && typeof typeMeta.sub_configs === 'object' ? typeMeta.sub_configs : null;
+    if (!rules) return [];
+    const keys = [];
+    for (const controlled of Object.values(rules)) {
+      for (const key of (typeof controlled === 'string' ? [controlled] : (Array.isArray(controlled) ? controlled : []))) {
+        if (!keys.includes(key)) keys.push(key);
+      }
+    }
+    return keys;
   }
 
   function buildRuntimeFields(panel, config) {
@@ -350,34 +431,186 @@
       br.textContent = '⚠ 该任务 schema 采集失败，无法自动生成表单：' + (schema.error || '');
       panel.appendChild(br);
     } else if (schema && schema.fields && schema.fields.length) {
-      const rowByKey = {};
-      let applyVisibility = () => {};
-      for (const f of schema.fields) rowByKey[f.key] = buildField(panel, t, f, config, () => applyVisibility());
-      applyVisibility = () => {
-        const parentsByChild = {};
-        for (const parent of schema.fields) {
-          const rules = parent.type && typeof parent.type.sub_configs === 'object' ? parent.type.sub_configs : null;
-          if (!rules) continue;
-          for (const keys of Object.values(rules)) {
-            for (const key of (typeof keys === 'string' ? [keys] : (Array.isArray(keys) ? keys : []))) {
+      const fieldsHost = document.createElement('div');
+      fieldsHost.className = 'cfg-fields';
+      panel.appendChild(fieldsHost);
+      const fieldByKey = Object.fromEntries(schema.fields.map((field) => [field.key, field]));
+      const groups = schema.configGroups && typeof schema.configGroups === 'object' ? schema.configGroups : {};
+      const selectorKey = schema.groupSelector && fieldByKey[schema.groupSelector] ? schema.groupSelector : '';
+
+      const rebuildFields = () => {
+        fieldsHost.replaceChildren();
+        const rowByKey = {};
+        const groupByKey = {};
+        const renderedKeys = new Set();
+        let applyVisibility = () => {};
+
+        const ordinaryChildren = (field) => field && field.key !== selectorKey
+          ? allSubConfigKeys(field.type)
+          : [];
+
+        const countNodeFields = (key, checking = new Set()) => {
+          if (checking.has(key)) return 0;
+          const next = new Set(checking); next.add(key);
+          const children = [...(groups[key] || []), ...ordinaryChildren(fieldByKey[key])];
+          const keys = new Set(fieldByKey[key] ? [key] : []);
+          for (const child of children) {
+            if (child === key) continue;
+            if (groups[child] || ordinaryChildren(fieldByKey[child]).length) {
+              if (countNodeFields(child, next)) keys.add(child);
+            } else if (fieldByKey[child]) keys.add(child);
+          }
+          return keys.size;
+        };
+
+        const renderField = (key, container, onChange = () => applyVisibility()) => {
+          if (renderedKeys.has(key) || !fieldByKey[key]) return false;
+          renderedKeys.add(key);
+          rowByKey[key] = buildField(container, t, fieldByKey[key], config, onChange);
+          return true;
+        };
+
+        const renderNode = (key, container, path, checking = new Set()) => {
+          if (checking.has(key)) return false;
+          const field = fieldByKey[key];
+          const declaredChildren = Array.isArray(groups[key]) ? groups[key] : [];
+          const conditionalChildren = ordinaryChildren(field);
+          const children = [...new Set([...declaredChildren, ...conditionalChildren])]
+            .filter((child) => child !== key);
+          if (!children.length) return renderField(key, container);
+
+          const group = document.createElement('div');
+          group.className = 'cfg-group';
+          const header = document.createElement('div');
+          header.className = 'cfg-group-header';
+          if (field) {
+            renderField(key, header);
+          } else {
+            const title = document.createElement('div');
+            title.className = 'cfg-group-title';
+            title.textContent = key;
+            header.appendChild(title);
+          }
+          const count = document.createElement('span');
+          count.className = 'cfg-group-count';
+          count.textContent = String(Math.max(0, countNodeFields(key) - (field ? 1 : 0)));
+          const titleTarget = header.querySelector('.cfg-group-title') || header.querySelector('label');
+          if (titleTarget) titleTarget.appendChild(count);
+
+          const toggle = document.createElement('button');
+          toggle.className = 'cfg-group-toggle secondary';
+          const body = document.createElement('div');
+          body.className = 'cfg-group-body';
+          const stateKey = taskKey(t) + '::' + path.join('>');
+          const defaultOpen = field ? Boolean(fieldValue(field, config)) : false;
+          const isOpen = openConfigGroups.has(stateKey) ? openConfigGroups.get(stateKey) : defaultOpen;
+          const setOpen = (open) => {
+            group.classList.toggle('open', open);
+            toggle.textContent = open ? '▲' : '▼';
+            toggle.title = open ? '收起子任务配置' : '展开子任务配置';
+            openConfigGroups.set(stateKey, open);
+          };
+          toggle.addEventListener('click', () => setOpen(!group.classList.contains('open')));
+          header.appendChild(toggle);
+          group.appendChild(header);
+          group.appendChild(body);
+          container.appendChild(group);
+          groupByKey[key] = group;
+
+          const next = new Set(checking); next.add(key);
+          for (const child of children) renderNode(child, body, [...path, child], next);
+          if (!body.childElementCount) {
+            toggle.style.display = 'none';
+          } else {
+            setOpen(Boolean(isOpen));
+          }
+          return true;
+        };
+
+        const groupReferenced = new Set(Object.keys(groups));
+        for (const children of Object.values(groups)) {
+          if (Array.isArray(children)) for (const key of children) groupReferenced.add(key);
+        }
+        const conditionControlled = new Set();
+        for (const field of schema.fields) {
+          if (field.key === selectorKey) continue;
+          for (const key of allSubConfigKeys(field.type)) conditionControlled.add(key);
+        }
+
+        if (selectorKey) {
+          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = '配置分组'; fieldsHost.appendChild(title);
+          renderField(selectorKey, fieldsHost, rebuildFields);
+        }
+
+        const commonRoots = schema.fields.filter((field) =>
+          field.key !== selectorKey &&
+          !groupReferenced.has(field.key) &&
+          !conditionControlled.has(field.key)
+        );
+        if (commonRoots.length) {
+          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = '通用参数'; fieldsHost.appendChild(title);
+          for (const field of commonRoots) renderNode(field.key, fieldsHost, ['通用参数', field.key]);
+        }
+
+        if (selectorKey) {
+          const selected = String(fieldValue(fieldByKey[selectorKey], config) ?? '');
+          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = selected || '分组参数'; fieldsHost.appendChild(title);
+          for (const child of (groups[selected] || [])) renderNode(child, fieldsHost, [selected, child]);
+        } else if (Object.keys(groups).length) {
+          const referencedGroups = new Set();
+          for (const children of Object.values(groups)) {
+            if (Array.isArray(children)) for (const child of children) if (groups[child]) referencedGroups.add(child);
+          }
+          const roots = Object.keys(groups).filter((key) => !referencedGroups.has(key));
+          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = '子任务配置'; fieldsHost.appendChild(title);
+          for (const root of roots) renderNode(root, fieldsHost, [root]);
+        }
+
+        const remaining = schema.fields.filter((field) =>
+          field.key !== selectorKey &&
+          !renderedKeys.has(field.key) &&
+          !groupReferenced.has(field.key) &&
+          !conditionControlled.has(field.key)
+        );
+        if (remaining.length) {
+          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = '其他参数'; fieldsHost.appendChild(title);
+          for (const field of remaining) renderNode(field.key, fieldsHost, ['其他参数', field.key]);
+        }
+
+        applyVisibility = () => {
+          const parentsByChild = {};
+          for (const parent of schema.fields) {
+            if (parent.key === selectorKey) continue;
+            for (const key of allSubConfigKeys(parent.type)) {
               (parentsByChild[key] = parentsByChild[key] || []).push(parent);
             }
           }
-        }
-        const visible = (key, checking) => {
-          if (checking.has(key)) return false;
-          const parents = parentsByChild[key] || [];
-          if (!parents.length) return true;
-          const next = new Set(checking); next.add(key);
-          return parents.every((parent) => {
-            if (!visible(parent.key, next)) return false;
-            const value = config.params && parent.key in config.params ? config.params[parent.key] : parent.value;
-            return activeSubConfigKeys(parent.type, value).includes(key);
-          });
+          const visible = (key, checking) => {
+            if (checking.has(key)) return false;
+            const parents = parentsByChild[key] || [];
+            if (!parents.length) return true;
+            const next = new Set(checking); next.add(key);
+            return parents.every((parent) =>
+              visible(parent.key, next) && activeSubConfigKeys(parent.type, fieldValue(parent, config)).includes(key)
+            );
+          };
+          for (const [key, row] of Object.entries(rowByKey)) {
+            const isVisible = visible(key, new Set());
+            row.style.display = isVisible ? '' : 'none';
+            if (groupByKey[key]) groupByKey[key].style.display = isVisible ? '' : 'none';
+          }
+          // 标题型分组没有自己的字段；仅当至少一个直接子节点可见时显示。
+          for (const [key, group] of Object.entries(groupByKey).reverse()) {
+            if (fieldByKey[key]) continue;
+            const body = group.querySelector('.cfg-group-body');
+            const hasVisibleChild = body && Array.from(body.children).some((child) => child.style.display !== 'none');
+            group.style.display = hasVisibleChild ? '' : 'none';
+          }
         };
-        for (const [key, row] of Object.entries(rowByKey)) row.style.display = visible(key, new Set()) ? '' : 'none';
+        applyVisibility();
       };
-      applyVisibility();
+
+      rebuildFields();
       buildRuntimeFields(panel, config);
       const actions = document.createElement('div');
       actions.className = 'cfg-actions';

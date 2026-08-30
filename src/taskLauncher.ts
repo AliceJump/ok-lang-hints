@@ -43,6 +43,10 @@ interface TaskSchema {
   displayName?: string;
   description?: string;
   kind?: 'onetime' | 'trigger';
+  /** 项目声明的配置分组/子任务树：组名 -> 字段或子组 key。 */
+  configGroups?: Record<string, string[]>;
+  /** register_config_groups 生成的分组下拉字段。 */
+  groupSelector?: string;
 }
 
 /** 每个任务的独立配置（持久化到 .vscode/ok-lang-hints-tasks.json） */
