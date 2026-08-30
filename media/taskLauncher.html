@@ -83,7 +83,8 @@
   }
   .cfg-field select,
   .cfg-field input[type=text],
-  .cfg-field input[type=number] {
+  .cfg-field input[type=number],
+  .cfg-field textarea {
     width: 100%;
     box-sizing: border-box;
     background: var(--vscode-input-background);
@@ -93,6 +94,7 @@
     padding: 3px 6px;
     font-size: 12px;
   }
+  .cfg-field textarea { min-height: 72px; resize: vertical; font-family: inherit; }
   .cfg-field input[type=checkbox] { accent-color: var(--vscode-focusBorder); }
   .cfg-actions {
     display: flex;
@@ -161,6 +163,7 @@
       : (field.value !== undefined ? field.value : field.default);
     const typeName = String(typeMeta.type || '');
     const options = Array.isArray(typeMeta.options) ? typeMeta.options : [];
+    const optionsAvailable = Array.isArray(typeMeta.options_available) ? typeMeta.options_available : [];
 
     // 1) drop_down：下拉
     if (typeName === 'drop_down' && options.length) {
@@ -199,14 +202,16 @@
       const inp = document.createElement('input');
       inp.type = 'number';
       inp.value = String(rawValue);
-      if (typeMeta.minimum !== undefined) inp.min = String(typeMeta.minimum);
-      if (typeMeta.maximum !== undefined) inp.max = String(typeMeta.maximum);
+      const minimum = typeMeta.minimum !== undefined ? typeMeta.minimum : typeMeta.min;
+      const maximum = typeMeta.maximum !== undefined ? typeMeta.maximum : typeMeta.max;
+      if (minimum !== undefined) inp.min = String(minimum);
+      if (maximum !== undefined) inp.max = String(maximum);
       inp.addEventListener('change', () => {
         const n = Number(inp.value);
         setValue(Number.isNaN(n) ? 0 : n);
       });
       row.appendChild(inp);
-    } else if (Array.isArray(rawValue) && options.length) {
+    } else if (Array.isArray(rawValue) && typeName === 'multi_selection' && options.length) {
       // 4) multi_selection：多选下拉（多选框）
       const wrap = document.createElement('div');
       const sel = document.createElement('select');
@@ -233,12 +238,21 @@
       const inp = document.createElement('input');
       inp.type = 'text';
       inp.value = (Array.isArray(rawValue) ? rawValue : []).join(', ');
+      if (optionsAvailable.length) {
+        inp.title = '可选值: ' + optionsAvailable.map(String).join(', ');
+      }
       inp.addEventListener('change', () => {
         setValue(inp.value.split(',').map((s) => s.trim()).filter(Boolean));
       });
       row.appendChild(inp);
+    } else if (typeof rawValue === 'string' && (typeName === 'text_edit' || rawValue.includes('\n') || rawValue.length > 80)) {
+      // 6) 多行或长文本
+      const inp = document.createElement('textarea');
+      inp.value = rawValue;
+      inp.addEventListener('change', () => setValue(inp.value));
+      row.appendChild(inp);
     } else {
-      // 6) 其他（str 等）：文本框
+      // 7) 其他（str 等）：文本框
       const inp = document.createElement('input');
       inp.type = 'text';
       inp.value = rawValue === undefined || rawValue === null ? '' : String(rawValue);
@@ -252,8 +266,10 @@
   function buildConfigPanel(card, t, schema) {
     const panel = document.createElement('div');
     panel.className = 'cfg-panel';
-    const config = Object.assign({}, taskConfigs[taskKey(t)] || {});
-    if (!config.params) config.params = {};
+    const savedConfig = taskConfigs[taskKey(t)] || {};
+    const config = Object.assign({}, savedConfig, {
+      params: Object.assign({}, savedConfig.params || {}),
+    });
     if (schema && schema.broken) {
       const br = document.createElement('div');
       br.className = 'cfg-broken';
@@ -267,7 +283,6 @@
       save.textContent = '💾 保存参数';
       save.addEventListener('click', () => {
         vscode.postMessage({ type: 'saveConfig', task: t, config });
-        setStatus('ok', '已保存 ' + t.displayName + ' 的参数');
       });
       const reset = document.createElement('button');
       reset.className = 'secondary';
@@ -276,7 +291,6 @@
         const fresh = Object.assign({}, taskConfigs[taskKey(t)] || {});
         delete fresh.params;
         vscode.postMessage({ type: 'saveConfig', task: t, config: fresh });
-        setStatus('ok', '已重置 ' + t.displayName + ' 的参数');
       });
       actions.appendChild(save); actions.appendChild(reset);
       panel.appendChild(actions);
@@ -323,7 +337,7 @@
         if (!running) return;
         vscode.postMessage({ type: 'stop', task: { module: t.module, className: t.className, displayName: t.displayName } });
       });
-      const schema = schemas[t.className];
+      const schema = schemas[taskKey(t)];
       const cfgToggle = document.createElement('button');
       cfgToggle.className = 'cfg-toggle';
       cfgToggle.textContent = '⚙ 参数';
@@ -370,7 +384,14 @@
         render(currentTasks);
         break;
       case 'status': setStatus(msg.level, msg.text); break;
-      case 'running': setRunning(msg.running); if (msg.running === false) setStatus('ok', '任务结束，详见输出面板'); break;
+      case 'running':
+        setRunning(msg.running);
+        if (msg.stopping) setStatus('warn', '正在停止任务…');
+        else if (msg.error) setStatus('error', msg.error);
+        else if (msg.stopped) setStatus('warn', '任务已停止，详见输出面板');
+        else if (msg.running === false && msg.code === 0) setStatus('ok', '任务完成，详见输出面板');
+        else if (msg.running === false) setStatus('error', '任务异常结束，详见输出面板');
+        break;
     }
   });
   vscode.postMessage({ type: 'ready' });

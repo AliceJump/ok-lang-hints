@@ -5,9 +5,9 @@
     python run_task.py --task TaskClassName --config-module src.config [--extra args...]
 
 参数覆盖通过环境变量 OK_LANG_HINTS_INJECT 传入:
-    {"TaskClassName": {"key": value, ...}}
+    {"module.path::TaskClassName": {"key": value, ...}}
 
-注入原理：猴子补丁 BaseTask.after_init —— 任务实例化并 load_config() 后，
+注入原理：猴子补丁 BaseTask.load_config —— 任务加载配置后、on_create() 前，
 把插件侧 params 覆盖进 self.config（仅内存，不写 configs/*.json，不污染项目配置）。
 参考 ok-end-field src/patches 的 monkey-patch 模式（functools.wraps + 类方法替换 + 幂等）。
 """
@@ -22,34 +22,34 @@ sys.stderr.reconfigure(encoding="utf-8")
 
 
 def apply_inject_patch(inject: dict) -> None:
-    """把 inject={ClassName: {key: value}} 在任务加载配置后覆盖进 self.config。"""
+    """把 inject={module::ClassName: {key: value}} 覆盖进目标任务配置。"""
     if not inject:
         return
     from ok.task.task import BaseTask
 
-    original = BaseTask.after_init
+    original = BaseTask.load_config
 
     @functools.wraps(original)
-    def patched_after_init(self, *args, **kwargs):
+    def patched_load_config(self, *args, **kwargs):
         original(self, *args, **kwargs)
-        overrides = inject.get(self.__class__.__name__)
+        task_key = f"{self.__class__.__module__}::{self.__class__.__name__}"
+        overrides = inject.get(task_key)
         if isinstance(overrides, dict):
             for key, value in overrides.items():
                 if key in self.config:
-                    self.config[key] = value
+                    # Config.__setitem__ 会立即写回 configs/*.json；直接调用 dict
+                    # 基类实现，确保覆盖仅对当前进程生效。
+                    dict.__setitem__(self.config, key, value)
 
-    BaseTask.after_init = patched_after_init
+    BaseTask.load_config = patched_load_config
 
 
 def main():
     parser = argparse.ArgumentParser(description="运行 ok-script 单个任务（headless）")
     parser.add_argument("--task", required=True, help="任务类名")
+    parser.add_argument("--task-module", required=True, help="任务模块路径")
     parser.add_argument("--config-module", default="src.config", help="config 模块路径，如 src.config 或 config")
-    parser.add_argument("--extra", nargs=argparse.REMAINDER, default=[], help="透传给项目的额外参数")
-    args, unknown = parser.parse_known_args()
-    # --extra 之后的参数全部归 extra；parse_known_args 会把未知参数放 unknown
-    if unknown:
-        args.extra = unknown + args.extra
+    args = parser.parse_args()
 
     # 读参数覆盖（环境变量 -> 不炸）
     inject = {}
@@ -73,9 +73,15 @@ def main():
     # 注意：不能直接把 trigger_tasks 清空——若目标任务本身是 trigger 任务，
     # OK.get_task 会先查 onetime_tasks 再查 trigger_tasks，清空会导致找不到。
     config = dict(config)
+    config["check_mutex"] = False
     task_name = args.task
-    config["onetime_tasks"] = [t for t in config.get("onetime_tasks", []) if t[1] == task_name]
-    config["trigger_tasks"] = [t for t in config.get("trigger_tasks", []) if t[1] == task_name]
+    task_module = args.task_module
+    config["onetime_tasks"] = [
+        t for t in config.get("onetime_tasks", []) if t[0] == task_module and t[1] == task_name
+    ]
+    config["trigger_tasks"] = [
+        t for t in config.get("trigger_tasks", []) if t[0] == task_module and t[1] == task_name
+    ]
 
     # 清理 sys.argv —— ok-script 的 OK.__init__ 内部会 argparse 解析 sys.argv，
     # 与我们的参数冲突，必须在 import run_task 前替换为空列表
