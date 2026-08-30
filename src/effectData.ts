@@ -76,7 +76,14 @@ export class EffectData {
   refresh(force = false): void {
     if (!this.rootDir) return;
     const fp = this.effectsFile();
-    if (!fs.existsSync(fp)) return;
+    if (!fs.existsSync(fp)) {
+      if (force || this.filePath === fp) {
+        this.cache.clear();
+        this.filePath = fp;
+        this.mtime = 0;
+      }
+      return;
+    }
     let m = 0;
     try {
       m = fs.statSync(fp).mtimeMs;

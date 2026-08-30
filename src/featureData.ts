@@ -31,6 +31,10 @@ export class FeatureData {
 
   refresh(force = false): void {
     if (!this.rootDir) return;
+    if (force) {
+      this.cache.clear();
+      this.cocoMtimes.clear();
+    }
     for (const cocoPath of this.cocoFiles()) {
       if (!fs.existsSync(cocoPath)) continue;
       let mtime = 0;

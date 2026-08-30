@@ -217,6 +217,10 @@ export class LangData {
   /** 扫描 assets/lang/*.json（按 mtime 增量） */
   private refreshJson(force: boolean): void {
     const dir = this.langDir();
+    if (force) {
+      this.jsonCache.clear();
+      this.mtimes.clear();
+    }
     if (!this.rootDir || !fs.existsSync(dir)) return;
 
     const seen = new Set<string>();
