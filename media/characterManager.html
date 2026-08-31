@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-cn">
+<html>
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-__CSP_NONCE__'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>角色技能管理</title>
+<title></title>
 <style>
   :root {
     --border: var(--vscode-panel-border, rgba(128,128,128,.28));
@@ -420,17 +420,17 @@
 <div id="app">
   <header class="topbar">
     <div class="title-row">
-      <div class="title">角色技能管理</div>
+      <div class="title"></div>
       <div id="project"></div>
       <div class="spacer"></div>
-      <input id="globalSearch" type="search" placeholder="搜索角色、技能、效果、描述…">
-      <button id="refresh" class="secondary icon" title="刷新数据">↻</button>
+      <input id="globalSearch" type="search">
+      <button id="refresh" class="secondary icon">↻</button>
     </div>
     <nav class="tabs">
-      <button class="tab active" data-tab="characters">角色与技能<span id="charactersBadge" class="badge">0</span></button>
-      <button class="tab" data-tab="effects">效果索引<span id="effectsBadge" class="badge">0</span></button>
-      <button class="tab" data-tab="locales">名称本地化<span id="localesBadge" class="badge">0</span></button>
-      <button class="tab" data-tab="issues">数据诊断<span id="issuesBadge" class="badge">0</span></button>
+      <button class="tab active" data-tab="characters"><span id="charactersBadge" class="badge">0</span></button>
+      <button class="tab" data-tab="effects"><span id="effectsBadge" class="badge">0</span></button>
+      <button class="tab" data-tab="locales"><span id="localesBadge" class="badge">0</span></button>
+      <button class="tab" data-tab="issues"><span id="issuesBadge" class="badge">0</span></button>
     </nav>
   </header>
   <section id="summary" class="summary"></section>
@@ -438,42 +438,42 @@
     <section id="charactersView" class="view active split">
       <aside class="sidebar">
         <div class="filters">
-          <select id="starFilter"><option value="">全部星级</option></select>
-          <select id="elementFilter"><option value="">全部元素</option></select>
-          <select id="professionFilter"><option value="">全部职业</option></select>
-          <select id="skillTypeFilter"><option value="">全部技能类型</option></select>
-          <label class="filter-check"><input id="enhancementOnly" type="checkbox">仅显示含强化组的角色</label>
-          <label class="filter-check"><input id="issueOnly" type="checkbox">仅显示存在诊断的角色</label>
+          <select id="starFilter"><option value=""></option></select>
+          <select id="elementFilter"><option value=""></option></select>
+          <select id="professionFilter"><option value=""></option></select>
+          <select id="skillTypeFilter"><option value=""></option></select>
+          <label class="filter-check"><input id="enhancementOnly" type="checkbox"><span></span></label>
+          <label class="filter-check"><input id="issueOnly" type="checkbox"><span></span></label>
         </div>
-        <div class="list-head"><span id="characterCount">0 个角色</span><span class="spacer"></span><span>技能 / 强化</span></div>
+        <div class="list-head"><span id="characterCount"></span><span class="spacer"></span><span></span></div>
         <div id="characterList" class="scroll"></div>
       </aside>
       <section class="detail"><div id="characterDetail" class="scroll"></div></section>
     </section>
     <section id="effectsView" class="view" style="flex-direction:column">
       <div class="effect-toolbar">
-        <input id="effectSearch" type="search" placeholder="搜索效果 ID、描述、角色或技能…">
-        <select id="effectCategory"><option value="">全部分类</option></select>
-        <select id="effectUsage"><option value="">全部效果</option><option value="used">仅已引用</option><option value="unused">仅未引用</option><option value="unknown">仅未知</option></select>
-        <button id="addEffectCategory" class="secondary">＋ 添加类别</button>
-        <button id="addEffect">＋ 添加效果</button>
+        <input id="effectSearch" type="search">
+        <select id="effectCategory"><option value=""></option></select>
+        <select id="effectUsage"><option value=""></option><option value="used"></option><option value="unused"></option><option value="unknown"></option></select>
+        <button id="addEffectCategory" class="secondary"></button>
+        <button id="addEffect"></button>
         <span id="effectCount" class="item-sub"></span>
       </div>
       <div id="effectList" class="scroll"></div>
     </section>
     <section id="localesView" class="view" style="flex-direction:column">
-      <div class="locale-toolbar"><span>角色名称多语言矩阵</span><span class="item-sub">空白单元格表示缺失，可点击角色打开语言源文件。</span></div>
+      <div class="locale-toolbar"><span></span><span class="item-sub"></span></div>
       <div id="localeTable" class="table-wrap"></div>
     </section>
     <section id="issuesView" class="view" style="flex-direction:column">
       <div class="issues-toolbar">
-        <input id="issueSearch" type="search" placeholder="搜索诊断信息…">
-        <select id="issueSeverity"><option value="">全部级别</option><option value="error">错误</option><option value="warning">警告</option><option value="info">信息</option></select>
+        <input id="issueSearch" type="search">
+        <select id="issueSeverity"><option value=""></option><option value="error"></option><option value="warning"></option><option value="info"></option></select>
         <span id="issueCount" class="item-sub"></span>
       </div>
       <div id="issueList" class="scroll"></div>
     </section>
-    <div id="loading"><div>正在读取角色、技能、效果与多语言数据…</div></div>
+    <div id="loading"><div></div></div>
     <div id="fatal"></div>
   </main>
   <div id="modalBackdrop" class="modal-backdrop">
@@ -481,11 +481,13 @@
       <div class="modal-head"><div id="modalTitle" class="modal-title"></div><div class="spacer"></div><button id="modalClose" class="secondary icon">✕</button></div>
       <div id="modalBody" class="modal-body"></div>
       <div id="modalError" class="form-error" style="padding:0 12px"></div>
-      <div class="modal-actions"><button id="modalCancel" class="secondary">取消</button><button id="modalSave">保存</button></div>
+      <div class="modal-actions"><button id="modalCancel" class="secondary"></button><button id="modalSave"></button></div>
     </div>
   </div>
 </div>
 <script nonce="__CSP_NONCE__">
+  const I18N = __I18N_JSON__;
+  const t = (key, args = {}) => (I18N[key] || key).replace(/\{(\w+)\}/g, (_, name) => String(args[name] ?? '{' + name + '}'));
   const vscode = acquireVsCodeApi();
   const previousState = vscode.getState() || {};
   let snapshot = null;
@@ -498,6 +500,46 @@
   const normalized = (value) => text(value).toLowerCase();
   const currentQuery = () => normalized($('globalSearch').value.trim());
   const saveState = () => vscode.setState({ activeTab, selectedCharacterId });
+
+  function localizeStaticUi() {
+    document.documentElement.lang = navigator.language || 'en';
+    document.title = t('charactersTitle');
+    document.querySelector('.title').textContent = t('charactersTitle');
+    $('globalSearch').placeholder = t('searchCharacters');
+    $('refresh').title = t('refresh');
+    const tabs = { characters: 'charactersTab', effects: 'effectsTab', locales: 'localesTab', issues: 'issuesTab' };
+    for (const node of document.querySelectorAll('.tab')) {
+      const badge = node.querySelector('.badge');
+      const label = document.createTextNode(t(tabs[node.dataset.tab]));
+      node.replaceChildren(label, badge);
+    }
+    $('starFilter').options[0].textContent = t('allStars');
+    $('elementFilter').options[0].textContent = t('allElements');
+    $('professionFilter').options[0].textContent = t('allProfessions');
+    $('skillTypeFilter').options[0].textContent = t('allSkillTypes');
+    $('enhancementOnly').nextElementSibling.textContent = t('enhancementOnly');
+    $('issueOnly').nextElementSibling.textContent = t('issueOnly');
+    document.querySelector('.list-head > span:last-child').textContent = t('skillsEnhancements');
+    $('effectSearch').placeholder = t('searchEffects');
+    $('effectCategory').options[0].textContent = t('allCategories');
+    $('effectUsage').options[0].textContent = t('allEffects');
+    $('effectUsage').options[1].textContent = t('usedOnly');
+    $('effectUsage').options[2].textContent = t('unusedOnly');
+    $('effectUsage').options[3].textContent = t('unknownOnly');
+    $('addEffectCategory').textContent = '＋ ' + t('addEffectCategory');
+    $('addEffect').textContent = '＋ ' + t('addEffect');
+    document.querySelector('.locale-toolbar > span:first-child').textContent = t('localizationMatrix');
+    document.querySelector('.locale-toolbar > span:last-child').textContent = t('localizationHint');
+    $('issueSearch').placeholder = t('searchIssues');
+    $('issueSeverity').options[0].textContent = t('allSeverities');
+    $('issueSeverity').options[1].textContent = t('error');
+    $('issueSeverity').options[2].textContent = t('warning');
+    $('issueSeverity').options[3].textContent = t('info');
+    $('loading').firstElementChild.textContent = t('readingCharacterData');
+    $('modalClose').title = t('close');
+    $('modalCancel').textContent = t('cancel');
+    $('modalSave').textContent = t('save');
+  }
 
   function clear(element) { element.replaceChildren(); }
   function element(tag, className, content) {
@@ -559,12 +601,13 @@
     }
     const effects = [...snapshot.effects];
     for (const id of initialMap.keys()) {
-      if (!effects.some((effect) => effect.id === id)) effects.unshift({ id, category: '未定义', description: '当前数据中的未知效果', defined: false, usages: [] });
+      if (!effects.some((effect) => effect.id === id)) effects.unshift({ id, category: '__undefined__', description: t('unknownCurrentEffect'), defined: false, usages: [] });
     }
     const categories = new Map();
     for (const effect of effects) {
-      const list = categories.get(effect.category) || [];
-      list.push(effect); categories.set(effect.category, list);
+      const category = effect.category === '__undefined__' ? t('undefinedEffect') : effect.category;
+      const list = categories.get(category) || [];
+      list.push(effect); categories.set(category, list);
     }
     for (const [category, items] of categories) {
       const group = document.createElement('optgroup'); group.label = category;
@@ -576,7 +619,7 @@
       select.appendChild(group);
     }
     left.appendChild(select);
-    left.appendChild(element('div', 'effect-editor-hint', '按住 Ctrl / Cmd 可多选；选项来源于 effects.py，并按效果类别分组。'));
+    left.appendChild(element('div', 'effect-editor-hint', t('effectMultiHint')));
     editor.appendChild(left);
     const params = element('div', 'effect-params'); editor.appendChild(params);
     const values = new Map();
@@ -597,11 +640,11 @@
       const selected = [...select.selectedOptions].map((option) => option.value);
       clear(params);
       if (idsOnly) {
-        params.appendChild(element('div', 'empty', selected.length ? selected.length + ' 个触发依赖效果已选择' : '未选择触发依赖效果'));
+        params.appendChild(element('div', 'empty', selected.length ? t('selectedTriggerEffects', { count: selected.length }) : t('noTriggerEffects')));
         return;
       }
       if (!selected.length) {
-        params.appendChild(element('div', 'empty', '未选择效果'));
+        params.appendChild(element('div', 'empty', t('noSelectedEffects')));
         return;
       }
       for (const id of selected) {
@@ -610,7 +653,7 @@
         const row = element('div', 'effect-param-row');
         row.appendChild(element('div', 'effect-param-title', id));
         const definition = snapshot.effects.find((effect) => effect.id === id);
-        row.appendChild(element('div', 'effect-param-desc', definition?.description || '未知效果'));
+        row.appendChild(element('div', 'effect-param-desc', definition?.description || t('unknownEffect')));
         const grid = element('div', 'effect-param-grid');
         const valueInput = inputControl(value.value, 'number');
         const durationInput = inputControl(value.duration);
@@ -646,7 +689,7 @@
     const form = element('div', 'form-grid');
     const controls = build(form) || {};
     $('modalBody').appendChild(form);
-    $('modalSave').textContent = saveText || '保存';
+    $('modalSave').textContent = saveText || t('save');
     modalSubmit = () => onSubmit(controls);
     $('modalBackdrop').classList.add('show');
     const first = form.querySelector('input,select,textarea');
@@ -673,7 +716,7 @@
     const editing = !!skill;
     const synced = editing && skill.source !== 'custom';
     const value = skill || { skillId: character.characterId + '_skill', name: '', skillType: '战技', element: character.element, description: '', damageMultiplier: '', staggerValue: 0, cooldown: '', spiritCost: 0, effects: [] };
-    showModal(editing ? '修改技能' : '添加技能', (form) => {
+    showModal(editing ? t('modifySkill') : t('addSkill'), (form) => {
       const controls = {
         skillId: inputControl(value.skillId), name: inputControl(value.name), skillType: selectControl(value.skillType, skillTypeOptions()),
         element: inputControl(value.element), damageMultiplier: inputControl(value.damageMultiplier), staggerValue: inputControl(value.staggerValue, 'number'),
@@ -685,11 +728,11 @@
       controls.skillType.disabled = synced;
       controls.element.disabled = synced;
       controls.description.disabled = synced;
-      form.appendChild(formField('技能 ID', controls.skillId)); form.appendChild(formField('技能名称', controls.name));
-      form.appendChild(formField('技能类型', controls.skillType)); form.appendChild(formField('元素', controls.element));
-      form.appendChild(formField('伤害倍率', controls.damageMultiplier)); form.appendChild(formField('失衡值', controls.staggerValue));
-      form.appendChild(formField('冷却', controls.cooldown)); form.appendChild(formField('技力消耗', controls.spiritCost));
-      form.appendChild(formField('技能描述', controls.description, true)); form.appendChild(formField('基础效果（可多选）', controls.effects.element, true));
+      form.appendChild(formField(t('skillId'), controls.skillId)); form.appendChild(formField(t('skillName'), controls.name));
+      form.appendChild(formField(t('skillType'), controls.skillType)); form.appendChild(formField(t('element'), controls.element));
+      form.appendChild(formField(t('damageMultiplier'), controls.damageMultiplier)); form.appendChild(formField(t('staggerValue'), controls.staggerValue));
+      form.appendChild(formField(t('cooldownField'), controls.cooldown)); form.appendChild(formField(t('spiritCostField'), controls.spiritCost));
+      form.appendChild(formField(t('skillDescription'), controls.description, true)); form.appendChild(formField(t('baseEffectsMulti'), controls.effects.element, true));
       return controls;
     }, (controls) => {
       const data = {
@@ -700,23 +743,23 @@
         effects: controls.effects.getValue(),
       };
       mutate({ action: editing ? 'updateSkill' : 'addSkill', characterId: character.characterId, skillId: editing ? skill.skillId : undefined, data });
-    }, editing ? '修改' : '添加');
+    }, editing ? t('modify') : t('add'));
   }
 
   function showEnhancementEditor(character, skill, enhancement, index) {
     const editing = !!enhancement;
     const value = enhancement || { name: '', triggerText: '', triggerEffects: [], effects: [], enhancementEffect: '', visiblePulse: false };
-    showModal(editing ? '修改强化组' : '添加强化组', (form) => {
+    showModal(editing ? t('modifyEnhancement') : t('addEnhancement'), (form) => {
       const controls = {
         name: inputControl(value.name), triggerText: textareaControl(value.triggerText), enhancementEffect: textareaControl(value.enhancementEffect),
         triggerEffects: createEffectEditor(value.triggerEffects, true),
         effects: createEffectEditor(value.effects, false), visiblePulse: document.createElement('input'),
       };
       controls.visiblePulse.type = 'checkbox'; controls.visiblePulse.checked = value.visiblePulse === true;
-      form.appendChild(formField('强化组名称', controls.name));
-      const check = element('label', 'form-check'); check.appendChild(controls.visiblePulse); check.appendChild(element('span', '', '强化状态可见脉冲')); form.appendChild(formField('显示标记', check));
-      form.appendChild(formField('触发条件文本', controls.triggerText, true)); form.appendChild(formField('强化效果说明', controls.enhancementEffect, true));
-      form.appendChild(formField('触发依赖效果（可多选）', controls.triggerEffects.element, true)); form.appendChild(formField('强化产出效果（可多选）', controls.effects.element, true));
+      form.appendChild(formField(t('enhancementName'), controls.name));
+      const check = element('label', 'form-check'); check.appendChild(controls.visiblePulse); check.appendChild(element('span', '', t('visiblePulse'))); form.appendChild(formField(t('visibleMarker'), check));
+      form.appendChild(formField(t('triggerText'), controls.triggerText, true)); form.appendChild(formField(t('enhancementDescription'), controls.enhancementEffect, true));
+      form.appendChild(formField(t('triggerEffectsMulti'), controls.triggerEffects.element, true)); form.appendChild(formField(t('outputEffectsMulti'), controls.effects.element, true));
       return controls;
     }, (controls) => {
       mutate({
@@ -726,32 +769,32 @@
           triggerEffects: controls.triggerEffects.getValue(), effects: controls.effects.getValue(),
           visiblePulse: controls.visiblePulse.checked },
       });
-    }, editing ? '修改' : '添加');
+    }, editing ? t('modify') : t('add'));
   }
 
   function showEffectCategoryEditor() {
-    showModal('添加效果类别', (form) => {
+    showModal(t('addEffectCategory'), (form) => {
       const controls = { category: inputControl('') };
-      form.appendChild(formField('类别名称', controls.category, true));
+      form.appendChild(formField(t('categoryName'), controls.category, true));
       return controls;
-    }, (controls) => mutateEffect({ action: 'addCategory', data: { category: controls.category.value } }), '添加');
+    }, (controls) => mutateEffect({ action: 'addCategory', data: { category: controls.category.value } }), t('add'));
   }
 
   function showEffectEditor() {
-    const categories = [...new Set((snapshot.effectCategories || snapshot.effects.map((effect) => effect.category)).filter((category) => category && category !== '未定义'))].sort();
-    showModal('添加效果', (form) => {
+    const categories = [...new Set((snapshot.effectCategories || snapshot.effects.map((effect) => effect.category)).filter((category) => category && category !== '__undefined__'))].sort();
+    showModal(t('addEffect'), (form) => {
       const controls = { effectId: inputControl(''), description: textareaControl(''), category: selectControl(categories[0] || '', categories) };
-      form.appendChild(formField('效果 ID（大写下划线）', controls.effectId));
-      form.appendChild(formField('效果类别', controls.category));
-      form.appendChild(formField('效果描述', controls.description, true));
+      form.appendChild(formField(t('effectId'), controls.effectId));
+      form.appendChild(formField(t('effectCategory'), controls.category));
+      form.appendChild(formField(t('effectDescription'), controls.description, true));
       return controls;
     }, (controls) => mutateEffect({ action: 'addEffect', data: {
       effectId: controls.effectId.value, category: controls.category.value, description: controls.description.value,
-    }}), '添加');
+    }}), t('add'));
   }
 
   function confirmDelete(label, callback) {
-    if (confirm('确定删除“' + label + '”吗？\n保存前会自动创建 .bak 备份。')) callback();
+    if (confirm(t('confirmDelete', { name: label }))) callback();
   }
 
   function setTab(tab) {
@@ -766,13 +809,13 @@
   function renderSummary() {
     const summary = snapshot.summary;
     const metrics = [
-      ['角色', summary.characters, ''],
-      ['技能', summary.skills, ''],
-      ['强化组', summary.enhancements, ''],
-      ['效果引用', summary.effectReferences, ''],
-      ['效果定义', summary.definedEffects, ''],
-      ['错误', summary.errors, summary.errors ? 'error' : ''],
-      ['警告', summary.warnings, summary.warnings ? 'warning' : ''],
+      [t('charactersMetric'), summary.characters, ''],
+      [t('skillsMetric'), summary.skills, ''],
+      [t('enhancementsMetric'), summary.enhancements, ''],
+      [t('effectReferencesMetric'), summary.effectReferences, ''],
+      [t('effectDefinitionsMetric'), summary.definedEffects, ''],
+      [t('error'), summary.errors, summary.errors ? 'error' : ''],
+      [t('warning'), summary.warnings, summary.warnings ? 'warning' : ''],
     ];
     clear($('summary'));
     for (const [label, value, className] of metrics) {
@@ -795,11 +838,11 @@
   }
 
   function setupFilters() {
-    fillSelect($('starFilter'), snapshot.characters.map((item) => item.star ? String(item.star) : '未定'), '全部星级');
-    fillSelect($('elementFilter'), snapshot.characters.map((item) => item.element || '未定'), '全部元素');
-    fillSelect($('professionFilter'), snapshot.characters.map((item) => item.profession || '未定'), '全部职业');
-    fillSelect($('skillTypeFilter'), snapshot.characters.flatMap((item) => item.skills.map((skill) => skill.skillType)), '全部技能类型');
-    fillSelect($('effectCategory'), snapshot.effectCategories || snapshot.effects.map((item) => item.category), '全部分类');
+    fillSelect($('starFilter'), snapshot.characters.map((item) => item.star ? String(item.star) : t('unknownStar')), t('allStars'));
+    fillSelect($('elementFilter'), snapshot.characters.map((item) => item.element || t('unknownElement')), t('allElements'));
+    fillSelect($('professionFilter'), snapshot.characters.map((item) => item.profession || t('unknownProfession')), t('allProfessions'));
+    fillSelect($('skillTypeFilter'), snapshot.characters.flatMap((item) => item.skills.map((skill) => skill.skillType)), t('allSkillTypes'));
+    fillSelect($('effectCategory'), snapshot.effectCategories || snapshot.effects.map((item) => item.category).filter((category) => category !== '__undefined__'), t('allCategories'));
   }
 
   function characterHaystack(character) {
@@ -824,9 +867,9 @@
     const skillType = $('skillTypeFilter').value;
     return snapshot.characters.filter((character) => {
       if (query && !characterHaystack(character).includes(query)) return false;
-      if (star && String(character.star || '未定') !== star) return false;
-      if (elementFilter && (character.element || '未定') !== elementFilter) return false;
-      if (profession && (character.profession || '未定') !== profession) return false;
+      if (star && String(character.star || t('unknownStar')) !== star) return false;
+      if (elementFilter && (character.element || t('unknownElement')) !== elementFilter) return false;
+      if (profession && (character.profession || t('unknownProfession')) !== profession) return false;
       if (skillType && !character.skills.some((skill) => skill.skillType === skillType)) return false;
       if ($('enhancementOnly').checked && !character.skills.some((skill) => skill.enhancements.length)) return false;
       if ($('issueOnly').checked && !character.issueCount) return false;
@@ -836,10 +879,10 @@
 
   function renderCharacterList() {
     const characters = filteredCharacters();
-    $('characterCount').textContent = characters.length + ' / ' + snapshot.characters.length + ' 个角色';
+    $('characterCount').textContent = t('characterCount', { shown: characters.length, total: snapshot.characters.length });
     clear($('characterList'));
     if (!characters.length) {
-      $('characterList').appendChild(element('div', 'empty', '没有匹配的角色'));
+      $('characterList').appendChild(element('div', 'empty', t('noCharacters')));
       renderCharacterDetail(null);
       return;
     }
@@ -850,7 +893,7 @@
       item.appendChild(element('div', 'avatar', character.name.slice(0, 1)));
       const main = element('div', 'item-main');
       main.appendChild(element('div', 'item-name', character.name));
-      main.appendChild(element('div', 'item-sub', [character.star ? character.star + '★' : '星级未定', character.element || '元素未定', character.profession || '职业未定'].join(' · ')));
+      main.appendChild(element('div', 'item-sub', [character.star ? character.star + '★' : t('unknownStar'), character.element || t('unknownElement'), character.profession || t('unknownProfession')].join(' · ')));
       item.appendChild(main);
       const stats = element('div', 'item-count', character.skills.length + ' / ' + character.skills.reduce((sum, skill) => sum + skill.enhancements.length, 0));
       if (character.issueCount) stats.appendChild(element('span', 'issue-dot ' + (character.errorCount ? 'error' : ''), character.issueCount));
@@ -875,7 +918,7 @@
 
   function effectDescription(effectId) {
     const effect = snapshot.effects.find((item) => item.id === effectId);
-    return effect ? effect.description : '未定义效果';
+    return effect ? effect.description : t('undefinedEffect');
   }
 
   function focusEffect(effectId) {
@@ -886,17 +929,17 @@
 
   function appendEffectChips(container, effects) {
     if (!effects.length) {
-      container.appendChild(element('span', 'item-sub', '无'));
+      container.appendChild(element('span', 'item-sub', t('none')));
       return;
     }
     for (const effect of effects) {
       const suffix = [
-        effect.value !== undefined && effect.value !== null ? '值=' + effect.value : '',
+        effect.value !== undefined && effect.value !== null ? t('valueLabel') + '=' + effect.value : '',
         effect.duration !== undefined && effect.duration !== null && effect.duration !== '' ? 'duration=' + effect.duration : '',
         effect.count !== undefined ? 'count=' + effect.count : '',
         effect.target ? 'target=' + effect.target : '',
       ].filter(Boolean).join(' · ');
-      const title = effectDescription(effect.effectId) + (suffix ? '\n' + suffix : '') + (effect.inferred ? '\n由触发文本推断' : '');
+      const title = effectDescription(effect.effectId) + (suffix ? '\n' + suffix : '') + (effect.inferred ? '\n' + t('inferredFromTriggerText') : '');
       container.appendChild(makeChip(effect.effectId, 'effect ' + (!effect.known ? 'unknown ' : '') + (effect.inferred ? 'inferred' : ''), title, () => focusEffect(effect.effectId)));
     }
   }
@@ -904,7 +947,7 @@
   function renderCharacterDetail(character) {
     clear($('characterDetail'));
     if (!character) {
-      $('characterDetail').appendChild(element('div', 'empty', '从左侧选择一个角色'));
+      $('characterDetail').appendChild(element('div', 'empty', t('selectCharacter')));
       return;
     }
     const header = element('div', 'character-header');
@@ -912,12 +955,12 @@
     left.appendChild(element('div', 'character-title', character.name));
     left.appendChild(element('div', 'character-id', character.characterId + (character.master?.en ? ' · ' + character.master.en : '')));
     const meta = element('div', 'chips');
-    meta.appendChild(makeChip(character.star ? character.star + '★' : '星级未定'));
-    meta.appendChild(makeChip(character.element || '元素未定'));
-    meta.appendChild(makeChip(character.profession || '职业未定'));
-    meta.appendChild(makeChip(character.weaponType || '武器未定'));
-    meta.appendChild(makeChip(character.skills.length + ' 个技能'));
-    meta.appendChild(makeChip(character.skills.reduce((sum, skill) => sum + skill.enhancements.length, 0) + ' 个强化组'));
+    meta.appendChild(makeChip(character.star ? character.star + '★' : t('unknownStar')));
+    meta.appendChild(makeChip(character.element || t('unknownElement')));
+    meta.appendChild(makeChip(character.profession || t('unknownProfession')));
+    meta.appendChild(makeChip(character.weaponType || t('unknownWeapon')));
+    meta.appendChild(makeChip(t('skillsCount', { count: character.skills.length })));
+    meta.appendChild(makeChip(t('enhancementsCount', { count: character.skills.reduce((sum, skill) => sum + skill.enhancements.length, 0) })));
     left.appendChild(meta);
     const locales = element('div', 'locales-inline');
     for (const locale of snapshot.summary.locales.slice(0, 6)) {
@@ -930,17 +973,17 @@
     header.appendChild(left);
     const actions = element('div');
     actions.style.display = 'flex'; actions.style.gap = '6px'; actions.style.flexWrap = 'wrap';
-    actions.appendChild(button('打开角色 JSON', 'secondary', () => postOpen('character', { characterId: character.characterId }), '在编辑器中打开源文件'));
+    actions.appendChild(button(t('openCharacterJson'), 'secondary', () => postOpen('character', { characterId: character.characterId }), t('openSource')));
     header.appendChild(actions);
     $('characterDetail').appendChild(header);
 
     if (!character.skills.length) {
-      $('characterDetail').appendChild(element('div', 'empty', '该角色尚无技能数据'));
+      $('characterDetail').appendChild(element('div', 'empty', t('noSkills')));
       return;
     }
     const skillSectionTitle = element('div', 'section-title');
-    skillSectionTitle.appendChild(element('span', '', '技能与强化效果'));
-    skillSectionTitle.appendChild(button('＋ 添加技能', 'secondary', () => showSkillEditor(character, null)));
+    skillSectionTitle.appendChild(element('span', '', t('skillsAndEnhancements')));
+    skillSectionTitle.appendChild(button('＋ ' + t('addSkill'), 'secondary', () => showSkillEditor(character, null)));
     $('characterDetail').appendChild(skillSectionTitle);
     for (const skill of character.skills) {
       const card = element('article', 'skill-card');
@@ -948,7 +991,7 @@
       const title = element('div');
       title.appendChild(element('div', 'skill-name', skill.name));
       const id = element('div', 'skill-id', skill.skillId);
-      id.title = '单击复制技能 ID';
+      id.title = t('clickCopySkillId');
       id.style.cursor = 'pointer';
       id.addEventListener('click', () => postCopy(skill.skillId));
       title.appendChild(id);
@@ -956,21 +999,21 @@
       const skillMeta = element('div', 'skill-meta');
       skillMeta.appendChild(makeChip(skill.skillType));
       if (skill.element) skillMeta.appendChild(makeChip(skill.element));
-      if (skill.hasEnhancement) skillMeta.appendChild(makeChip('强化态'));
-      skillMeta.appendChild(button('修改', 'secondary icon', () => showSkillEditor(character, skill)));
+      if (skill.hasEnhancement) skillMeta.appendChild(makeChip(t('enhancedState')));
+      skillMeta.appendChild(button(t('modify'), 'secondary icon', () => showSkillEditor(character, skill)));
       if (skill.source === 'custom') {
-        skillMeta.appendChild(button('删除', 'danger-button icon', () => confirmDelete(skill.name, () => mutate({ action: 'deleteSkill', characterId: character.characterId, skillId: skill.skillId }))));
+        skillMeta.appendChild(button(t('delete'), 'danger-button icon', () => confirmDelete(skill.name, () => mutate({ action: 'deleteSkill', characterId: character.characterId, skillId: skill.skillId }))));
       } else {
-        skillMeta.appendChild(makeChip('同步技能 · ID/名称/类别/元素/描述锁定'));
+        skillMeta.appendChild(makeChip(t('syncedSkillLocked')));
       }
-      skillMeta.appendChild(button('打开', 'secondary icon', () => postOpen('character', { characterId: character.characterId, skillId: skill.skillId }), '打开并定位到技能'));
+      skillMeta.appendChild(button(t('open'), 'secondary icon', () => postOpen('character', { characterId: character.characterId, skillId: skill.skillId }), t('openSource')));
       head.appendChild(skillMeta);
       card.appendChild(head);
       const body = element('div', 'skill-body');
       if (skill.description) body.appendChild(element('div', 'description', skill.description));
       const kv = element('div', 'kv-grid');
       const values = [
-        ['倍率', skill.damageMultiplier], ['失衡', skill.staggerValue || ''], ['冷却', skill.cooldown], ['技力', skill.spiritCost || ''],
+        [t('multiplier'), skill.damageMultiplier], [t('stagger'), skill.staggerValue || ''], [t('cooldown'), skill.cooldown], [t('spiritCost'), skill.spiritCost || ''],
       ].filter((entry) => entry[1] !== '');
       for (const [key, value] of values) {
         const node = element('div');
@@ -980,7 +1023,7 @@
       }
       if (values.length) body.appendChild(kv);
       const effects = element('div', 'effect-line');
-      effects.appendChild(element('div', 'line-label', '基础效果'));
+      effects.appendChild(element('div', 'line-label', t('baseEffects')));
       const effectChips = element('div', 'chips');
       appendEffectChips(effectChips, skill.effects);
       effects.appendChild(effectChips);
@@ -989,27 +1032,27 @@
         const enhancement = skill.enhancements[enhancementIndex];
         const block = element('section', 'enhancement');
         const name = element('div', 'enhancement-name', enhancement.name);
-        if (enhancement.visiblePulse) name.appendChild(element('span', 'pulse', '可见脉冲'));
-        name.appendChild(button('修改', 'secondary icon', () => showEnhancementEditor(character, skill, enhancement, enhancementIndex)));
-        name.appendChild(button('删除', 'danger-button icon', () => confirmDelete(enhancement.name, () => mutate({ action: 'deleteEnhancement', characterId: character.characterId, skillId: skill.skillId, enhancementIndex }))));
+        if (enhancement.visiblePulse) name.appendChild(element('span', 'pulse', t('visiblePulse')));
+        name.appendChild(button(t('modify'), 'secondary icon', () => showEnhancementEditor(character, skill, enhancement, enhancementIndex)));
+        name.appendChild(button(t('delete'), 'danger-button icon', () => confirmDelete(enhancement.name, () => mutate({ action: 'deleteEnhancement', characterId: character.characterId, skillId: skill.skillId, enhancementIndex }))));
         block.appendChild(name);
         if (enhancement.triggerText) block.appendChild(element('div', 'enhancement-trigger', enhancement.triggerText));
         if (enhancement.enhancementEffect) block.appendChild(element('div', 'item-sub', enhancement.enhancementEffect));
         const triggerLine = element('div', 'effect-line');
-        triggerLine.appendChild(element('div', 'line-label', '触发依赖效果'));
+        triggerLine.appendChild(element('div', 'line-label', t('triggerEffects')));
         const triggerChips = element('div', 'chips');
         appendEffectChips(triggerChips, enhancement.triggerEffects);
         triggerLine.appendChild(triggerChips);
         block.appendChild(triggerLine);
         const outputLine = element('div', 'effect-line');
-        outputLine.appendChild(element('div', 'line-label', '强化产出效果'));
+        outputLine.appendChild(element('div', 'line-label', t('outputEffects')));
         const outputChips = element('div', 'chips');
         appendEffectChips(outputChips, enhancement.effects);
         outputLine.appendChild(outputChips);
         block.appendChild(outputLine);
         body.appendChild(block);
       }
-      const addEnhancement = button('＋ 添加强化组', 'secondary', () => showEnhancementEditor(character, skill, null, -1));
+      const addEnhancement = button('＋ ' + t('addEnhancement'), 'secondary', () => showEnhancementEditor(character, skill, null, -1));
       addEnhancement.style.marginTop = '8px';
       body.appendChild(addEnhancement);
       card.appendChild(body);
@@ -1034,19 +1077,20 @@
       if (usage === 'unknown' && effect.defined) return false;
       return true;
     });
-    $('effectCount').textContent = effects.length + ' / ' + snapshot.effects.length + ' 个效果';
+    $('effectCount').textContent = t('effectsCount', { shown: effects.length, total: snapshot.effects.length });
     clear($('effectList'));
     if (!effects.length) {
-      $('effectList').appendChild(element('div', 'empty', '没有匹配的效果'));
+      $('effectList').appendChild(element('div', 'empty', t('noEffects')));
       return;
     }
     for (const effect of effects) {
       const card = element('div', 'effect-card');
       const left = element('div');
       const id = element('div', 'effect-id', effect.id);
-      id.style.cursor = 'pointer'; id.title = '单击复制效果 ID'; id.addEventListener('click', () => postCopy(effect.id));
+      id.style.cursor = 'pointer'; id.title = t('clickCopyEffectId'); id.addEventListener('click', () => postCopy(effect.id));
       left.appendChild(id);
-      left.appendChild(element('div', 'item-sub', effect.category + (effect.defined ? '' : ' · 未定义')));
+      const categoryLabel = effect.category === '__undefined__' ? t('undefinedEffect') : effect.category;
+      left.appendChild(element('div', 'item-sub', categoryLabel + (effect.defined ? '' : ' · ' + t('undefinedEffect'))));
       const usageList = element('div', 'usage-list');
       const shown = effect.usages.slice(0, 8);
       for (const usageItem of shown) {
@@ -1063,11 +1107,11 @@
         });
         usageList.appendChild(node);
       }
-      if (effect.usages.length > shown.length) usageList.appendChild(element('div', 'item-sub', '另有 ' + (effect.usages.length - shown.length) + ' 处引用'));
+      if (effect.usages.length > shown.length) usageList.appendChild(element('div', 'item-sub', t('moreUsages', { count: effect.usages.length - shown.length })));
       left.appendChild(usageList);
       card.appendChild(left);
       card.appendChild(element('div', 'effect-desc', effect.description));
-      card.appendChild(button('打开定义', 'secondary', () => postOpen('effects', { effectId: effect.id })));
+      card.appendChild(button(t('openDefinition'), 'secondary', () => postOpen('effects', { effectId: effect.id })));
       $('effectList').appendChild(card);
     }
   }
@@ -1080,7 +1124,7 @@
     const table = element('table');
     const head = element('thead');
     const headRow = element('tr');
-    headRow.appendChild(element('th', 'sticky', '角色 / ID'));
+    headRow.appendChild(element('th', 'sticky', t('characterIdColumn')));
     for (const locale of snapshot.summary.locales) headRow.appendChild(element('th', '', locale));
     head.appendChild(headRow); table.appendChild(head);
     const body = element('tbody');
@@ -1088,14 +1132,14 @@
       const row = element('tr');
       const first = element('td', 'sticky');
       const name = element('div', 'item-name', character.name);
-      name.style.cursor = 'pointer'; name.title = '打开角色名称语言文件';
+      name.style.cursor = 'pointer'; name.title = t('openCharacterLocaleFile');
       name.addEventListener('click', () => postOpen('locale', { characterId: character.characterId }));
       first.appendChild(name);
       first.appendChild(element('div', 'item-sub', character.characterId));
       row.appendChild(first);
       for (const locale of snapshot.summary.locales) {
         const value = character.locales[locale] || '';
-        row.appendChild(element('td', value ? '' : 'missing-cell', value || '缺失'));
+        row.appendChild(element('td', value ? '' : 'missing-cell', value || t('missing')));
       }
       body.appendChild(row);
     }
@@ -1122,10 +1166,10 @@
       if (query && !normalized([issue.code, issue.message, issue.source?.characterId, issue.source?.skillId, issue.source?.effectId].join(' ')).includes(query)) return false;
       return true;
     });
-    $('issueCount').textContent = issues.length + ' / ' + snapshot.issues.length + ' 条诊断';
+    $('issueCount').textContent = t('issuesCount', { shown: issues.length, total: snapshot.issues.length });
     clear($('issueList'));
     if (!issues.length) {
-      $('issueList').appendChild(element('div', 'empty', snapshot.issues.length ? '没有匹配的诊断' : '未发现数据问题'));
+      $('issueList').appendChild(element('div', 'empty', snapshot.issues.length ? t('noIssuesMatch') : t('noIssues')));
       return;
     }
     for (const issue of issues) {
@@ -1134,7 +1178,7 @@
       row.appendChild(element('div', 'issue-code', issue.code));
       row.appendChild(element('div', '', issue.message));
       const payload = sourcePayload(issue.source);
-      if (payload) row.appendChild(button('打开源文件', 'secondary', () => postOpen(payload.kind, payload)));
+      if (payload) row.appendChild(button(t('openSource'), 'secondary', () => postOpen(payload.kind, payload)));
       else row.appendChild(element('span'));
       $('issueList').appendChild(row);
     }
@@ -1159,6 +1203,7 @@
     setTab(activeTab);
   }
 
+  localizeStaticUi();
   for (const tab of document.querySelectorAll('.tab')) tab.addEventListener('click', () => setTab(tab.dataset.tab));
   $('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
   $('globalSearch').addEventListener('input', applyAllFilters);
@@ -1186,11 +1231,11 @@
       renderData(message.snapshot);
     } else if (message.type === 'error') {
       $('loading').classList.remove('show');
-      $('fatal').textContent = message.text || '加载失败';
+      $('fatal').textContent = message.text || t('loadFailed');
       $('fatal').classList.add('show');
     } else if (message.type === 'mutationResult') {
       if (message.ok) closeModal();
-      else $('modalError').textContent = message.text || '保存失败';
+      else $('modalError').textContent = message.text || t('saveFailed');
     }
   });
 

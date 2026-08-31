@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseEffects } from './effectData';
+import { tr } from './localization';
 
 export type CharacterIssueSeverity = 'error' | 'warning' | 'info';
 export type CharacterSourceKind = 'character' | 'master' | 'locale' | 'effects';
@@ -194,13 +195,13 @@ function readJsonObject(
   source: CharacterIssueSource,
 ): JsonObject | undefined {
   if (!fs.existsSync(file)) {
-    addIssue('error', 'missing-file', `找不到数据文件：${file}`, source);
+    addIssue('error', 'missing-file', tr('Data file not found: {path}', { path: file }), source);
     return undefined;
   }
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf-8'));
     if (!isObject(parsed)) {
-      addIssue('error', 'invalid-root', `JSON 顶层必须是对象：${file}`, source);
+      addIssue('error', 'invalid-root', tr('The JSON root must be an object: {path}', { path: file }), source);
       return undefined;
     }
     return parsed;
@@ -208,7 +209,10 @@ function readJsonObject(
     addIssue(
       'error',
       'invalid-json',
-      `JSON 解析失败：${file} · ${error instanceof Error ? error.message : String(error)}`,
+      tr('Failed to parse JSON: {path} · {error}', {
+        path: file,
+        error: error instanceof Error ? error.message : String(error),
+      }),
       source,
     );
     return undefined;
@@ -292,13 +296,13 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
   if (master) {
     for (const [key, raw] of Object.entries(master)) {
       if (!isObject(raw)) {
-        addIssue('warning', 'invalid-master-entry', `角色主表 ${key} 不是对象`, { kind: 'master', characterId: key });
+        addIssue('warning', 'invalid-master-entry', tr('Character master entry {id} is not an object', { id: key }), { kind: 'master', characterId: key });
         continue;
       }
       const zh = stringValue(raw['zh']);
       const en = stringValue(raw['en']);
       const stars = numberValue(raw['stars']);
-      if (!zh) addIssue('warning', 'missing-master-name', `角色主表 ${key} 缺少 zh 名称`, { kind: 'master', characterId: key });
+      if (!zh) addIssue('warning', 'missing-master-name', tr('Character master entry {id} is missing its zh name', { id: key }), { kind: 'master', characterId: key });
       masterById.set(key, { key, zh, en, stars });
     }
   }
@@ -327,10 +331,10 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
     try {
       effectsText = fs.readFileSync(paths.effectsFile, 'utf-8');
     } catch (error) {
-      addIssue('error', 'effects-read-error', `无法读取效果定义：${error instanceof Error ? error.message : String(error)}`, { kind: 'effects' });
+      addIssue('error', 'effects-read-error', tr('Unable to read effect definitions: {error}', { error: error instanceof Error ? error.message : String(error) }), { kind: 'effects' });
     }
   } else {
-    addIssue('error', 'missing-effects-file', `找不到效果定义：${paths.effectsFile}`, { kind: 'effects' });
+    addIssue('error', 'missing-effects-file', tr('Effect definition file not found: {path}', { path: paths.effectsFile }), { kind: 'effects' });
   }
   const effectDefinitions = parseEffects(effectsText);
   const effectCategories = parseEffectCategories(effectsText);
@@ -346,7 +350,10 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
   ): CharacterEffectRef | undefined => {
     const effectId = effectIdFromUnknown(raw);
     if (!effectId) {
-      addIssue('warning', 'missing-effect-id', `${usage.characterName} / ${usage.skillName} 存在缺少 effect_id 的效果项`, source);
+      addIssue('warning', 'missing-effect-id', tr('{character} / {skill} contains an effect entry without effect_id', {
+        character: usage.characterName,
+        skill: usage.skillName,
+      }), source);
       return undefined;
     }
     const object = isObject(raw) ? raw : {};
@@ -371,13 +378,13 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
   let enhancementCount = 0;
 
   if (!fs.existsSync(paths.skillsDir)) {
-    addIssue('error', 'missing-skills-directory', `找不到角色技能目录：${paths.skillsDir}`, { kind: 'character' });
+    addIssue('error', 'missing-skills-directory', tr('Character skill directory not found: {path}', { path: paths.skillsDir }), { kind: 'character' });
   } else {
     let files: string[] = [];
     try {
       files = fs.readdirSync(paths.skillsDir).filter((name) => name.toLowerCase().endsWith('.json')).sort();
     } catch (error) {
-      addIssue('error', 'skills-directory-read-error', `无法读取角色技能目录：${error instanceof Error ? error.message : String(error)}`, { kind: 'character' });
+      addIssue('error', 'skills-directory-read-error', tr('Unable to read the character skill directory: {error}', { error: error instanceof Error ? error.message : String(error) }), { kind: 'character' });
     }
 
     for (const fileName of files) {
@@ -388,38 +395,42 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
       let characterId = stringValue(raw['character_id']);
       if (!characterId) {
         characterId = path.basename(fileName, path.extname(fileName));
-        addIssue('error', 'missing-character-id', `${fileName} 缺少 character_id，暂用文件名 ${characterId}`, { kind: 'character', characterId, fileName });
+        addIssue('error', 'missing-character-id', tr('{file} is missing character_id; using file name {id}', { file: fileName, id: characterId }), { kind: 'character', characterId, fileName });
       }
       const characterName = stringValue(raw['name'], masterById.get(characterId)?.zh || characterId);
       const source: CharacterIssueSource = { kind: 'character', characterId, fileName };
       if (parsedById.has(characterId)) {
-        addIssue('error', 'duplicate-character-id', `重复的角色技能 character_id：${characterId}`, source);
+        addIssue('error', 'duplicate-character-id', tr('Duplicate character skill character_id: {id}', { id: characterId }), source);
         continue;
       }
       sources.characterFiles.set(characterId, file);
       sources.characterFilesByName.set(fileName, file);
 
       const rawSkills = Array.isArray(raw['skills']) ? raw['skills'] : [];
-      if (!Array.isArray(raw['skills'])) addIssue('warning', 'missing-skills-array', `${characterName} 缺少 skills 数组`, source);
+      if (!Array.isArray(raw['skills'])) addIssue('warning', 'missing-skills-array', tr('{character} is missing the skills array', { character: characterName }), source);
       const skills: CharacterSkillView[] = [];
 
       for (let skillIndex = 0; skillIndex < rawSkills.length; skillIndex++) {
         const rawSkill = rawSkills[skillIndex];
         if (!isObject(rawSkill)) {
-          addIssue('warning', 'invalid-skill-entry', `${characterName} 的第 ${skillIndex + 1} 个技能不是对象`, source);
+          addIssue('warning', 'invalid-skill-entry', tr('Skill {index} for {character} is not an object', { character: characterName, index: skillIndex + 1 }), source);
           continue;
         }
         let skillId = stringValue(rawSkill['skill_id']);
         if (!skillId) {
           skillId = `${characterId}_skill_${skillIndex + 1}`;
-          addIssue('error', 'missing-skill-id', `${characterName} 的第 ${skillIndex + 1} 个技能缺少 skill_id`, { ...source, skillId });
+          addIssue('error', 'missing-skill-id', tr('Skill {index} for {character} is missing skill_id', { character: characterName, index: skillIndex + 1 }), { ...source, skillId });
         }
         const skillName = stringValue(rawSkill['name'], skillId);
         const skillType = stringValue(rawSkill['skill_type'], '未分类');
         const skillSource: CharacterIssueSource = { ...source, skillId };
         const duplicate = globalSkillIds.get(skillId);
         if (duplicate) {
-          addIssue('error', 'duplicate-skill-id', `技能 ID ${skillId} 同时用于 ${duplicate.characterName} 和 ${characterName}`, skillSource);
+          addIssue('error', 'duplicate-skill-id', tr('Skill ID {id} is used by both {first} and {second}', {
+            id: skillId,
+            first: duplicate.characterName,
+            second: characterName,
+          }), skillSource);
         } else {
           globalSkillIds.set(skillId, { characterId, characterName, sourceFile: fileName });
         }
@@ -502,10 +513,16 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
 
         const hasEnhancement = booleanValue(rawSkill['has_enhancement'], enhancements.length > 0);
         if (hasEnhancement && !enhancements.length) {
-          addIssue('warning', 'missing-enhancement-data', `${characterName} / ${skillName} 标记 has_enhancement=true，但没有强化组数据`, skillSource);
+          addIssue('warning', 'missing-enhancement-data', tr('{character} / {skill} sets has_enhancement=true but has no enhancement data', {
+            character: characterName,
+            skill: skillName,
+          }), skillSource);
         }
         if (!hasEnhancement && enhancements.length) {
-          addIssue('warning', 'unexpected-enhancement-data', `${characterName} / ${skillName} 有强化组数据，但 has_enhancement=false`, skillSource);
+          addIssue('warning', 'unexpected-enhancement-data', tr('{character} / {skill} has enhancement data but sets has_enhancement=false', {
+            character: characterName,
+            skill: skillName,
+          }), skillSource);
         }
 
         skills.push({
@@ -546,18 +563,26 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
     const masterInfo = masterById.get(characterId);
     const parsed = parsedById.get(characterId);
     const source: CharacterIssueSource = { kind: 'character', characterId, fileName: parsed?.sourceFile };
-    if (!parsed) addIssue('warning', 'missing-skill-file', `角色主表 ${masterInfo?.zh || characterId} 没有对应的技能文件`, { kind: 'master', characterId });
-    if (!masterInfo) addIssue('warning', 'missing-master-entry', `技能角色 ${parsed?.name || characterId} 不在 characters.json 主表中`, source);
+    if (!parsed) addIssue('warning', 'missing-skill-file', tr('Character master entry {character} has no corresponding skill file', { character: masterInfo?.zh || characterId }), { kind: 'master', characterId });
+    if (!masterInfo) addIssue('warning', 'missing-master-entry', tr('Skill character {character} is not present in the characters.json master table', { character: parsed?.name || characterId }), source);
     if (masterInfo && parsed) {
       if (masterInfo.zh && parsed.name && masterInfo.zh !== parsed.name) {
-        addIssue('warning', 'character-name-mismatch', `${characterId} 的主表名称“${masterInfo.zh}”与技能文件名称“${parsed.name}”不一致`, source);
+        addIssue('warning', 'character-name-mismatch', tr('Character {id} has master name “{master}” but skill-file name “{skillFile}”', {
+          id: characterId,
+          master: masterInfo.zh,
+          skillFile: parsed.name,
+        }), source);
       }
       if (masterInfo.stars && parsed.star && masterInfo.stars !== parsed.star) {
-        addIssue('warning', 'character-star-mismatch', `${parsed.name} 的主表星级 ${masterInfo.stars} 与技能文件星级 ${parsed.star} 不一致`, source);
+        addIssue('warning', 'character-star-mismatch', tr('{character} has master rarity {master} but skill-file rarity {skillFile}', {
+          character: parsed.name,
+          master: masterInfo.stars,
+          skillFile: parsed.star,
+        }), source);
       }
     }
     const locales = localeById.get(characterId) || {};
-    if (!Object.keys(locales).length) addIssue('warning', 'missing-character-locales', `${parsed?.name || masterInfo?.zh || characterId} 缺少多语言名称`, { kind: 'locale', characterId });
+    if (!Object.keys(locales).length) addIssue('warning', 'missing-character-locales', tr('{character} is missing localized names', { character: parsed?.name || masterInfo?.zh || characterId }), { kind: 'locale', characterId });
     const related = issues.filter((issue) => issue.source?.characterId === characterId);
     characters.push({
       characterId,
@@ -578,7 +603,7 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
 
   for (const localeCharacterId of localeById.keys()) {
     if (!allCharacterIds.has(localeCharacterId)) {
-      addIssue('info', 'orphan-locale-entry', `多语言名称 ${localeCharacterId} 没有角色主表或技能文件`, { kind: 'locale', characterId: localeCharacterId });
+      addIssue('info', 'orphan-locale-entry', tr('Localized name {id} has no character master entry or skill file', { id: localeCharacterId }), { kind: 'locale', characterId: localeCharacterId });
     }
   }
 
@@ -598,14 +623,18 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
     if (!effect) {
       effect = {
         id: pending.effectId,
-        description: '未在 effects.py 中定义',
-        category: '未定义',
+        description: tr('Not defined in effects.py'),
+        category: '__undefined__',
         defined: false,
         usages: [],
       };
       effectViews.set(pending.effectId, effect);
       unknownEffectIds.add(pending.effectId);
-      addIssue('error', 'unknown-effect-id', `${pending.usage.characterName} / ${pending.usage.skillName} 引用了未知效果 ${pending.effectId}`, pending.source);
+      addIssue('error', 'unknown-effect-id', tr('{character} / {skill} references unknown effect {effect}', {
+        character: pending.usage.characterName,
+        skill: pending.usage.skillName,
+        effect: pending.effectId,
+      }), pending.source);
     }
     effect.usages.push(pending.usage);
   }

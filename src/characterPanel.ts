@@ -8,6 +8,7 @@ import {
   configuredCharacterDataPaths,
   loadCharacterManagerData,
 } from './characterData';
+import { injectWebviewLocalization, tr, webviewStrings } from './localization';
 
 interface CharacterManagerMessage {
   type?: string;
@@ -29,7 +30,7 @@ function isObject(value: unknown): value is JsonObject {
 }
 
 function requiredString(value: unknown, name: string): string {
-  if (typeof value !== 'string' || !value.trim()) throw new Error(`${name}不能为空`);
+  if (typeof value !== 'string' || !value.trim()) throw new Error(tr('{name} cannot be empty', { name }));
   return value.trim();
 }
 
@@ -42,11 +43,11 @@ function finiteNumber(value: unknown, fallback = 0): number {
 }
 
 function effectArray(value: unknown, name: string): unknown[] {
-  if (!Array.isArray(value)) throw new Error(`${name}必须是 JSON 数组`);
+  if (!Array.isArray(value)) throw new Error(tr('{name} must be a JSON array', { name }));
   for (const item of value) {
     if (typeof item === 'string') continue;
     if (!isObject(item) || typeof item.effect_id !== 'string' || !item.effect_id.trim()) {
-      throw new Error(`${name}中的每项必须是效果 ID 字符串或含 effect_id 的对象`);
+      throw new Error(tr('Each item in {name} must be an effect ID string or an object containing effect_id', { name }));
     }
   }
   return value;
@@ -97,7 +98,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
     }
     const panel = vscode.window.createWebviewPanel(
       'okLangHintsCharacterManager',
-      '角色技能管理',
+      tr('Character & Skill Manager'),
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -144,9 +145,9 @@ export class CharacterManagerPanel implements vscode.Disposable {
     const file = path.join(this.extensionUri.fsPath, 'media', 'characterManager.html');
     try {
       const nonce = getNonce();
-      return fs.readFileSync(file, 'utf-8').split('__CSP_NONCE__').join(nonce);
+      return injectWebviewLocalization(fs.readFileSync(file, 'utf-8').split('__CSP_NONCE__').join(nonce));
     } catch (error) {
-      return `<!DOCTYPE html><html lang="zh-cn"><meta charset="UTF-8"><body style="font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:20px">无法读取角色管理面板：${error instanceof Error ? error.message : String(error)}</body></html>`;
+      return `<!DOCTYPE html><html><meta charset="UTF-8"><body style="font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:20px">${tr('Unable to read character manager panel: {error}', { error: error instanceof Error ? error.message : String(error) })}</body></html>`;
     }
   }
 
@@ -164,7 +165,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
       case 'copy':
         if (typeof message.text === 'string') {
           await vscode.env.clipboard.writeText(message.text);
-          void vscode.window.showInformationMessage(`已复制：${message.text}`);
+          void vscode.window.showInformationMessage(tr('Copied: {text}', { text: message.text }));
         }
         break;
       case 'mutateCharacter':
@@ -180,9 +181,9 @@ export class CharacterManagerPanel implements vscode.Disposable {
 
   private readCharacterFile(characterId: string): { file: string; root: JsonObject } {
     const file = this.sources?.characterFiles.get(characterId);
-    if (!file || !fs.existsSync(file)) throw new Error(`找不到角色 ${characterId} 的技能文件`);
+    if (!file || !fs.existsSync(file)) throw new Error(tr('Skill file for character {id} was not found', { id: characterId }));
     const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    if (!isObject(parsed)) throw new Error('角色 JSON 顶层必须是对象');
+    if (!isObject(parsed)) throw new Error(tr('The character JSON root must be an object'));
     if (!Array.isArray(parsed.skills)) parsed.skills = [];
     return { file, root: parsed };
   }
@@ -190,7 +191,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
   private findSkill(root: JsonObject, skillId: string): JsonObject {
     const skills = root.skills as unknown[];
     const skill = skills.find((item) => isObject(item) && item.skill_id === skillId);
-    if (!isObject(skill)) throw new Error(`找不到技能 ${skillId}`);
+    if (!isObject(skill)) throw new Error(tr('Skill {id} was not found', { id: skillId }));
     return skill;
   }
 
@@ -213,36 +214,36 @@ export class CharacterManagerPanel implements vscode.Disposable {
   }
 
   private sanitizeSkill(data: unknown, existing: JsonObject = {}): JsonObject {
-    if (!isObject(data)) throw new Error('技能数据格式无效');
+    if (!isObject(data)) throw new Error(tr('Invalid skill data format'));
     return {
       ...existing,
-      skill_id: requiredString(data.skillId, '技能 ID'),
-      name: requiredString(data.name, '技能名称'),
-      skill_type: requiredString(data.skillType, '技能类型'),
+      skill_id: requiredString(data.skillId, tr('Skill ID')),
+      name: requiredString(data.name, tr('Skill name')),
+      skill_type: requiredString(data.skillType, tr('Skill type')),
       element: optionalString(data.element) || null,
       description: optionalString(data.description),
       damage_multiplier: optionalString(data.damageMultiplier) || null,
       stagger_value: finiteNumber(data.staggerValue),
       cooldown: optionalString(data.cooldown) || null,
       spirit_cost: finiteNumber(data.spiritCost),
-      effects: effectArray(data.effects, '基础效果'),
+      effects: effectArray(data.effects, tr('Base effects')),
     };
   }
 
   private sanitizeEnhancement(data: unknown, existing: JsonObject = {}): JsonObject {
-    if (!isObject(data)) throw new Error('强化组数据格式无效');
-    const triggerEffects = effectArray(data.triggerEffects, '触发依赖效果')
+    if (!isObject(data)) throw new Error(tr('Invalid enhancement data format'));
+    const triggerEffects = effectArray(data.triggerEffects, tr('Trigger dependency effects'))
       .map((item) => typeof item === 'string' ? item : String((item as JsonObject).effect_id));
     return {
       ...existing,
-      name: requiredString(data.name, '强化组名称'),
+      name: requiredString(data.name, tr('Enhancement name')),
       trigger_condition: {
         text: optionalString(data.triggerText),
         effects: triggerEffects,
       },
       enhancement_effect: optionalString(data.enhancementEffect),
       enhancement_visible_pulse: data.visiblePulse === true,
-      effects: effectArray(data.effects, '强化产出效果'),
+      effects: effectArray(data.effects, tr('Enhancement output effects')),
     };
   }
 
@@ -262,18 +263,18 @@ export class CharacterManagerPanel implements vscode.Disposable {
 
   private async mutateCharacter(message: CharacterManagerMessage): Promise<void> {
     try {
-      const characterId = requiredString(message.characterId, '角色 ID');
+      const characterId = requiredString(message.characterId, tr('Character ID'));
       const { file, root } = this.readCharacterFile(characterId);
-      const action = requiredString(message.action, '修改操作');
+      const action = requiredString(message.action, tr('Mutation action'));
       const data = message.data;
       switch (action) {
         case 'updateCharacter':
-          throw new Error('角色基础信息来自同步数据，不允许修改');
+          throw new Error(tr('Character base information comes from synchronized data and cannot be modified'));
         case 'addSkill': {
           const skill = this.sanitizeSkill(data);
           const skills = root.skills as unknown[];
           if (skills.some((item) => isObject(item) && item.skill_id === skill.skill_id)) {
-            throw new Error(`技能 ID ${skill.skill_id} 已存在`);
+            throw new Error(tr('Skill ID {id} already exists', { id: String(skill.skill_id) }));
           }
           skill.has_enhancement = false;
           skill.enhancement = null;
@@ -282,7 +283,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
           break;
         }
         case 'updateSkill': {
-          const oldSkillId = requiredString(message.skillId, '原技能 ID');
+          const oldSkillId = requiredString(message.skillId, tr('Original skill ID'));
           const skill = this.findSkill(root, oldSkillId);
           const updated = this.sanitizeSkill(data, skill);
           if (skill._ok_lang_hints_custom !== true) {
@@ -294,48 +295,48 @@ export class CharacterManagerPanel implements vscode.Disposable {
           }
           const skills = root.skills as unknown[];
           if (updated.skill_id !== oldSkillId && skills.some((item) => isObject(item) && item.skill_id === updated.skill_id)) {
-            throw new Error(`技能 ID ${updated.skill_id} 已存在`);
+            throw new Error(tr('Skill ID {id} already exists', { id: String(updated.skill_id) }));
           }
           Object.assign(skill, updated);
           break;
         }
         case 'deleteSkill': {
-          const skillId = requiredString(message.skillId, '技能 ID');
+          const skillId = requiredString(message.skillId, tr('Skill ID'));
           const skills = root.skills as unknown[];
           const index = skills.findIndex((item) => isObject(item) && item.skill_id === skillId);
-          if (index < 0) throw new Error(`找不到技能 ${skillId}`);
+          if (index < 0) throw new Error(tr('Skill {id} was not found', { id: skillId }));
           const skill = skills[index];
-          if (!isObject(skill) || skill._ok_lang_hints_custom !== true) throw new Error('已同步技能不允许删除');
+          if (!isObject(skill) || skill._ok_lang_hints_custom !== true) throw new Error(tr('Synchronized skills cannot be deleted'));
           skills.splice(index, 1);
           break;
         }
         case 'addEnhancement': {
-          const skill = this.findSkill(root, requiredString(message.skillId, '技能 ID'));
+          const skill = this.findSkill(root, requiredString(message.skillId, tr('Skill ID')));
           const state = this.readEnhancements(skill);
           state.items.push(this.sanitizeEnhancement(data));
           this.writeEnhancements(skill, state.items, state.singular);
           break;
         }
         case 'updateEnhancement': {
-          const skill = this.findSkill(root, requiredString(message.skillId, '技能 ID'));
+          const skill = this.findSkill(root, requiredString(message.skillId, tr('Skill ID')));
           const state = this.readEnhancements(skill);
           const index = message.enhancementIndex;
-          if (!Number.isInteger(index) || index! < 0 || index! >= state.items.length) throw new Error('强化组索引无效');
+          if (!Number.isInteger(index) || index! < 0 || index! >= state.items.length) throw new Error(tr('Invalid enhancement index'));
           state.items[index!] = this.sanitizeEnhancement(data, state.items[index!]);
           this.writeEnhancements(skill, state.items, state.singular);
           break;
         }
         case 'deleteEnhancement': {
-          const skill = this.findSkill(root, requiredString(message.skillId, '技能 ID'));
+          const skill = this.findSkill(root, requiredString(message.skillId, tr('Skill ID')));
           const state = this.readEnhancements(skill);
           const index = message.enhancementIndex;
-          if (!Number.isInteger(index) || index! < 0 || index! >= state.items.length) throw new Error('强化组索引无效');
+          if (!Number.isInteger(index) || index! < 0 || index! >= state.items.length) throw new Error(tr('Invalid enhancement index'));
           state.items.splice(index!, 1);
           this.writeEnhancements(skill, state.items, state.singular);
           break;
         }
         default:
-          throw new Error(`不支持的修改操作：${action}`);
+          throw new Error(tr('Unsupported mutation action: {action}', { action }));
       }
       this.atomicWriteJson(file, root);
       await this.panel.webview.postMessage({ type: 'mutationResult', ok: true, action, characterId });
@@ -343,13 +344,13 @@ export class CharacterManagerPanel implements vscode.Disposable {
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
       await this.panel.webview.postMessage({ type: 'mutationResult', ok: false, text });
-      void vscode.window.showErrorMessage(`角色数据保存失败：${text}`);
+      void vscode.window.showErrorMessage(tr('Failed to save character data: {error}', { error: text }));
     }
   }
 
   private effectsFile(): string {
     const file = this.sources?.effectsFile;
-    if (!file || !fs.existsSync(file)) throw new Error('找不到 effects.py');
+    if (!file || !fs.existsSync(file)) throw new Error(tr('effects.py was not found'));
     return file;
   }
 
@@ -368,9 +369,9 @@ export class CharacterManagerPanel implements vscode.Disposable {
 
   private async mutateEffect(message: CharacterManagerMessage): Promise<void> {
     try {
-      const action = requiredString(message.action, '效果修改操作');
+      const action = requiredString(message.action, tr('Effect mutation action'));
       const data = message.data;
-      if (!isObject(data)) throw new Error('效果数据格式无效');
+      if (!isObject(data)) throw new Error(tr('Invalid effect data format'));
       const file = this.effectsFile();
       let text = fs.readFileSync(file, 'utf-8');
       const eol = text.includes('\r\n') ? '\r\n' : '\n';
@@ -380,7 +381,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
       const descriptionsStart = lines.findIndex((line, index) => index > descriptionsMarker && line.trim().startsWith('EFFECT_DESCRIPTIONS'));
       const termsStart = lines.findIndex((line, index) => index > descriptionsStart && line.trim().startsWith('# 效果术语映射'));
       if (classStart < 0 || descriptionsMarker < 0 || descriptionsStart < 0 || termsStart < 0) {
-        throw new Error('effects.py 结构不完整，无法安全写入');
+        throw new Error(tr('effects.py has an incomplete structure and cannot be written safely'));
       }
       const findCategory = (category: string, start: number, end: number) => {
         const marker = `# ${category}`;
@@ -402,10 +403,10 @@ export class CharacterManagerPanel implements vscode.Disposable {
         lines.splice(insertAt, 0, newLine);
       };
       if (action === 'addCategory') {
-        const category = requiredString(data.category, '效果类别');
-        if (/[\r\n#]/.test(category)) throw new Error('效果类别不能包含换行或 #');
+        const category = requiredString(data.category, tr('Effect category'));
+        if (/[\r\n#]/.test(category)) throw new Error(tr('Effect category cannot contain line breaks or #'));
         if (findCategory(category, classStart, descriptionsMarker) >= 0) {
-          throw new Error(`效果类别“${category}”已存在`);
+          throw new Error(tr('Effect category “{category}” already exists', { category }));
         }
         let enumInsert = descriptionsMarker;
         while (enumInsert > classStart + 1 && lines[enumInsert - 1].trim() === '') enumInsert--;
@@ -418,18 +419,18 @@ export class CharacterManagerPanel implements vscode.Disposable {
             break;
           }
         }
-        if (mapEnd < 0) throw new Error('无法定位 EFFECT_DESCRIPTIONS 结束大括号');
+        if (mapEnd < 0) throw new Error(tr('Unable to locate the closing brace of EFFECT_DESCRIPTIONS'));
         let mapInsert = mapEnd;
         while (mapInsert > descriptionsStart + 1 && lines[mapInsert - 1].trim() === '') mapInsert--;
         lines.splice(mapInsert, 0, '', `    # ${category}`);
       } else if (action === 'addEffect') {
-        const effectId = requiredString(data.effectId, '效果 ID').toUpperCase();
-        const description = requiredString(data.description, '效果描述');
-        const category = requiredString(data.category, '效果类别');
-        if (!/^[A-Z][A-Z0-9_]*$/.test(effectId)) throw new Error('效果 ID 只能包含大写字母、数字和下划线');
-        if (new RegExp(`^\\s*${effectId}\\s*=`, 'm').test(text)) throw new Error(`效果 ${effectId} 已存在`);
+        const effectId = requiredString(data.effectId, tr('Effect ID')).toUpperCase();
+        const description = requiredString(data.description, tr('Effect description'));
+        const category = requiredString(data.category, tr('Effect category'));
+        if (!/^[A-Z][A-Z0-9_]*$/.test(effectId)) throw new Error(tr('Effect ID may contain only uppercase letters, digits, and underscores'));
+        if (new RegExp(`^\\s*${effectId}\\s*=`, 'm').test(text)) throw new Error(tr('Effect {id} already exists', { id: effectId }));
         const enumCategory = findCategory(category, classStart, descriptionsMarker);
-        if (enumCategory < 0) throw new Error(`效果类别“${category}”不存在，请先添加类别`);
+        if (enumCategory < 0) throw new Error(tr('Effect category “{category}” does not exist; add the category first', { category }));
         insertAtCategoryEnd(enumCategory, descriptionsMarker, `    ${effectId} = "${effectId}"`);
         const currentDescriptionsStart = lines.findIndex((line) => line.trim().startsWith('EFFECT_DESCRIPTIONS'));
         const currentTermsStart = lines.findIndex((line, index) => index > currentDescriptionsStart && line.trim().startsWith('# 效果术语映射'));
@@ -440,13 +441,13 @@ export class CharacterManagerPanel implements vscode.Disposable {
             break;
           }
         }
-        if (currentMapEnd < 0) throw new Error('无法定位 EFFECT_DESCRIPTIONS 结束大括号');
+        if (currentMapEnd < 0) throw new Error(tr('Unable to locate the closing brace of EFFECT_DESCRIPTIONS'));
         const mapCategory = findCategory(category, currentDescriptionsStart, currentMapEnd);
-        if (mapCategory < 0) throw new Error(`无法定位“${category}”的描述映射分组`);
+        if (mapCategory < 0) throw new Error(tr('Unable to locate the description mapping group for “{category}”', { category }));
         const escapedDescription = JSON.stringify(description);
         insertAtCategoryEnd(mapCategory, currentMapEnd, `    EffectType.${effectId}: ${escapedDescription},`);
       } else {
-        throw new Error(`不支持的效果操作：${action}`);
+        throw new Error(tr('Unsupported effect action: {action}', { action }));
       }
       text = lines.join(eol);
       this.atomicWriteText(file, text);
@@ -455,7 +456,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
       await this.panel.webview.postMessage({ type: 'mutationResult', ok: false, text });
-      void vscode.window.showErrorMessage(`效果数据保存失败：${text}`);
+      void vscode.window.showErrorMessage(tr('Failed to save effect data: {error}', { error: text }));
     }
   }
 
@@ -469,7 +470,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
       this.disposeWatchers();
       await this.panel.webview.postMessage({
         type: 'error',
-        text: '未找到角色数据项目。请配置 okLangHints.characterProjectPath 或 okLangHints.okScriptProjectPath。',
+        text: tr('No character data project was found. Configure okLangHints.characterProjectPath or okLangHints.okScriptProjectPath.'),
       });
       return;
     }
@@ -482,7 +483,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
       if (generation !== this.generation) return;
       await this.panel.webview.postMessage({
         type: 'error',
-        text: `角色数据加载失败：${error instanceof Error ? error.message : String(error)}`,
+        text: tr('Failed to load character data: {error}', { error: error instanceof Error ? error.message : String(error) }),
       });
       return;
     }
@@ -542,7 +543,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
   private async openSource(message: CharacterManagerMessage): Promise<void> {
     const file = this.sourceFor(message);
     if (!file || !fs.existsSync(file)) {
-      void vscode.window.showWarningMessage('找不到对应源文件。');
+      void vscode.window.showWarningMessage(tr('The corresponding source file could not be found.'));
       return;
     }
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
@@ -577,6 +578,7 @@ export class CharacterManagerLauncherViewProvider implements vscode.WebviewViewP
   resolveWebviewView(view: vscode.WebviewView): void {
     view.webview.options = { enableScripts: true };
     const nonce = getNonce();
+    const strings = JSON.stringify(webviewStrings()).replace(/</g, '\\u003c');
     view.webview.html = `<!DOCTYPE html>
 <html lang="zh-cn">
 <head>
@@ -605,9 +607,11 @@ export class CharacterManagerLauncherViewProvider implements vscode.WebviewViewP
 </style>
 </head>
 <body>
-  <button id="open">打开角色技能管理面板</button>
+  <button id="open"></button>
   <script nonce="${nonce}">
+    const I18N = ${strings};
     const vscode = acquireVsCodeApi();
+    document.getElementById('open').textContent = I18N.toolboxOpenCharacterManager;
     document.getElementById('open').addEventListener('click', () => vscode.postMessage({ type: 'open' }));
   </script>
 </body>
