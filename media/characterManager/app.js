@@ -354,6 +354,15 @@ function makeChip(label, className, title, onClick) {
 }
 function effectDescription(effectId) { return snapshot.effects.find((item) => item.id === effectId)?.description || t('undefinedEffect'); }
 function effectDisplayName(effectId, fallback) { const effect = snapshot.effects.find((item) => item.id === effectId); return fallback || effect?.displayName || effect?.description || effectId; }
+function isNegativeEffect(effect) {
+  const definition = snapshot.effects.find((item) => item.id === effect.effectId);
+  const category = definition?.category || '';
+  return (typeof effect.count === 'number' && effect.count < 0)
+    || /^(?:CONSUME_|CLEAR_|DEBUFF_)/.test(effect.effectId)
+    || category.includes('减益')
+    || category.includes('消耗')
+    || category.includes('清除');
+}
 function focusEffect(effectId) { setTab('effects'); $('effectSearch').value = effectId; renderEffects(); }
 function appendEffectChips(container, effects) {
   if (!effects.length) { container.appendChild(element('span', 'item-sub', t('none'))); return; }
@@ -361,9 +370,10 @@ function appendEffectChips(container, effects) {
     const displayName = effectDisplayName(effect.effectId, effect.displayName);
     const suffix = [effect.value !== undefined && effect.value !== null ? `${t('valueLabel')}=${effect.value}` : '', effect.duration !== undefined && effect.duration !== null && effect.duration !== '' ? `duration=${effect.duration}` : '', effect.count !== undefined ? `count=${effect.count}` : '', effect.target ? `target=${effect.target}` : ''].filter(Boolean).join(' · ');
     const title = `${displayName}${displayName === effect.effectId ? '' : `\n${effect.effectId}`}\n${effectDescription(effect.effectId)}${suffix ? `\n${suffix}` : ''}${effect.inferred ? `\n${t('inferredFromTriggerText')}` : ''}`;
-    const chip = makeChip('', `effect ${!effect.known ? 'unknown ' : ''}${effect.inferred ? 'inferred' : ''}`, title, () => focusEffect(effect.effectId));
+    const chip = makeChip('', `effect ${!effect.known ? 'unknown ' : ''}${effect.inferred ? 'inferred ' : ''}${isNegativeEffect(effect) ? 'negative' : ''}`, title, () => focusEffect(effect.effectId));
     chip.appendChild(element('span', 'effect-chip-name', displayName));
     if (displayName !== effect.effectId) chip.appendChild(element('span', 'effect-chip-id', effect.effectId));
+    if (typeof effect.count === 'number') chip.appendChild(element('span', 'effect-chip-count', `count=${effect.count}`));
     container.appendChild(chip);
   }
 }

@@ -252,13 +252,25 @@ input::placeholder, textarea::placeholder { color: var(--vscode-input-placeholde
 .chip.effect:hover { border-color: var(--accent); }
 .chip.unknown { border-color: var(--danger); color: var(--danger); }
 .chip.inferred { border-style: dashed; }
+.chip.effect.negative,
+.chip.effect.negative:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
 .effect-chip-name { font-weight: 600; }
-.effect-chip-id {
+.effect-chip-id,
+.effect-chip-count {
   border-left: 1px solid var(--border);
   padding-left: 5px;
   color: var(--muted);
   font-family: var(--vscode-editor-font-family);
   font-size: 9px;
+}
+.chip.effect.negative .effect-chip-id,
+.chip.effect.negative .effect-chip-count {
+  border-left-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  color: inherit;
 }
 .locales-inline { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 4px 10px; margin-top: 8px; }
 .locale-name { display: flex; gap: 6px; min-width: 0; font-size: 11px; }
