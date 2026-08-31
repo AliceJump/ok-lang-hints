@@ -121,6 +121,24 @@ out/                         TypeScript 编译产物（由构建生成）
 
 每个外置 Webview 的 HTML、CSS 和 JavaScript 均放在同一功能目录中；宿主通过 CSP 限制和 `asWebviewUri()` 加载资源。
 
+## JetBrains / PyCharm 版本
+
+仓库的 `jetbrains/` 目录包含独立的 Kotlin + IntelliJ Platform 插件工程，当前最低支持 PyCharm / IntelliJ Platform 2025.1（需要 Python 支持）。首版已提供：
+
+- `self.lang`、OCR `match`、模板名称和效果 ID 的补全与快速文档。
+- Python / JSON 效果与语言值行内提示。
+- 可搜索的原生模板工具窗口，可插入、复制表达式或打开来源图片。
+- 项目级数据目录、locale、模板别名和提示开关设置。
+
+构建与安装：
+
+```bash
+cd jetbrains
+./gradlew test buildPlugin verifyPluginStructure verifyPluginConfiguration
+```
+
+Windows 使用 `gradlew.bat`。生成的 ZIP 位于 `jetbrains/build/distributions/`，可在 JetBrains IDE 的 **Settings / Plugins / Install Plugin from Disk...** 中安装。详细状态和后续移植范围见 `jetbrains/README.md`。
+
 ## 安装
 
 方式一（打包安装，推荐）：

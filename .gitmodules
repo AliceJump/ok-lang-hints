@@ -1,0 +1,3 @@
+[submodule "jetbrains"]
+	path = jetbrains
+	url = https://github.com/AliceJump/ok-lang-hints-jetbrains.git
