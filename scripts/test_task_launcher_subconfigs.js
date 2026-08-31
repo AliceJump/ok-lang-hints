@@ -1,7 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const jsdomRoot = process.env.OK_LANG_HINTS_JSDOM_ROOT || path.join(process.env.TEMP, 'ok-lang-hints-jsdom');
-const { JSDOM, VirtualConsole } = require(path.join(jsdomRoot, 'node_modules', 'jsdom'));
+let jsdom;
+try {
+  jsdom = require('jsdom');
+} catch {
+  const jsdomRoot = process.env.OK_LANG_HINTS_JSDOM_ROOT || path.join(process.env.TEMP, 'ok-lang-hints-jsdom');
+  jsdom = require(path.join(jsdomRoot, 'node_modules', 'jsdom'));
+}
+const { JSDOM, VirtualConsole } = jsdom;
 
 const root = path.resolve(__dirname, '..');
 const componentRoot = path.join(root, 'media', 'taskLauncher');

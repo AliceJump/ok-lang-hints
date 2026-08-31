@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    outputs:
+      release_sha: ${{ steps.commit.outputs.sha }}
+      tag: ${{ steps.version.outputs.tag }}
+      vsix: ${{ steps.version.outputs.vsix }}
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref_name == 'main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Resolve immutable release commit
+        id: commit
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            sha="$WORKFLOW_RUN_SHA"
+          else
+            sha="$CURRENT_SHA"
+          fi
+          if ! [[ "$sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "Invalid release SHA: $sha" >&2
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check out validated source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.commit.outputs.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve package metadata
+        id: version
+        run: npm run --silent verify:version
+
+      - name: Check existing tag and release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release_exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG already exists; GitHub Release creation will be skipped."
+          else
+            echo "release_exists=false" >> "$GITHUB_OUTPUT"
+            if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              tagged_sha=$(git rev-list -n 1 "$TAG")
+              if [ "$tagged_sha" != "$RELEASE_SHA" ]; then
+                echo "Tag $TAG already points to $tagged_sha, not $RELEASE_SHA. Bump package.json before releasing." >&2
+                exit 1
+              fi
+            fi
+          fi
+
+      - name: Verify, compile, and test new release
+        if: steps.existing.outputs.release_exists != 'true'
+        run: npm test
+
+      - name: Package new release VSIX
+        if: steps.existing.outputs.release_exists != 'true'
+        run: npm run package
+
+      - name: Create GitHub Release
+        if: steps.existing.outputs.release_exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VSIX: ${{ steps.version.outputs.vsix }}
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" "$VSIX#$VSIX" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$RELEASE_SHA" \
+            --title "$TAG" \
+            --generate-notes
+
+  publish-marketplace:
+    needs: release
+    if: needs.release.result == 'success'
+    uses: ./.github/workflows/publish-marketplace.yml
+    with:
+      release_sha: ${{ needs.release.outputs.release_sha }}
+      tag: ${{ needs.release.outputs.tag }}
+      vsix: ${{ needs.release.outputs.vsix }}
+    secrets: inherit

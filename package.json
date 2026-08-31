@@ -2,7 +2,7 @@
   "name": "ok-lang-hints",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "AliceJump",
   "license": "MIT",
   "icon": "icon.png",
@@ -35,10 +35,7 @@
   "activationEvents": [
     "onLanguage:python",
     "onLanguage:json",
-    "onLanguage:jsonc",
-    "onView:okLangHints.templateGallery",
-    "onView:okLangHints.taskLauncher",
-    "onView:okLangHints.toolbox"
+    "onLanguage:jsonc"
   ],
   "main": "./out/extension.js",
   "l10n": "./l10n",
@@ -214,13 +211,18 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "verify:version": "node scripts/release/verify-version.js",
+    "test": "npm run verify:version && npm run compile && npm run test:task-launcher",
+    "test:task-launcher": "node scripts/test_task_launcher_subconfigs.js",
     "vscode:prepublish": "npm run compile",
-    "package": "vsce package"
+    "package": "vsce package",
+    "publish:marketplace": "vsce publish --skip-duplicate --packagePath ok-lang-hints-${npm_package_version}.vsix"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.9.2",
+    "jsdom": "^26.1.0",
     "typescript": "^5.4.0"
   }
 }

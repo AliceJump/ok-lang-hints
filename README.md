@@ -132,11 +132,20 @@ npm run compile
 npx @vscode/vsce package --allow-missing-repository
 ```
 
-然后在 VS Code 中：`Ctrl+Shift+P` → **Extensions: Install from VSIX...** → 选择生成的 `ok-lang-hints-0.4.0.vsix`。
+然后在 VS Code 中：`Ctrl+Shift+P` → **Extensions: Install from VSIX...** → 选择生成的 `ok-lang-hints-0.5.0.vsix`。
 
 方式二（开发调试）：
 
 用 VS Code 打开本项目根目录，按 `F5`（使用 `ok-lang-hints/.vscode/launch.json` 的配置）启动扩展开发宿主，在宿主窗口打开任意 Python 文件即可看到效果。
+
+## 自动发布
+
+- Pull Request 和 `main` 推送会运行 `CI`：校验版本、编译、执行任务启动器 DOM 回归、打包 VSIX，并上传 14 天构建产物。
+- `main` 的 `CI` 成功后会运行 `Release`。工作流读取 `package.json` 版本；当对应的 `v<version>` Release 尚不存在时，自动创建标签、生成发布说明并上传 VSIX。
+- `package.json`、`package-lock.json` 根版本必须一致。发布新版本前只需先提升版本号，例如 `0.5.0` 对应 `v0.5.0`。
+- GitHub Release 使用仓库内置的 `GITHUB_TOKEN`，不需要手工配置 Secret。
+- 若要同步发布到 Visual Studio Marketplace，请在仓库 **Settings → Secrets and variables → Actions → Secrets** 新增 `VSCE_PAT`。未配置时只跳过 Marketplace，GitHub Release 仍正常创建。
+- `Release` 也支持从 Actions 页面手动触发，但仅允许从 `main` 发布。
 
 ## 配置
 

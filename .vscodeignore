@@ -6,6 +6,7 @@ node_modules/**
 **/tsconfig.tsbuildinfo
 *.vsix
 .git/**
+.github/**
 scripts/**
 configs/**
 logs/**/*.txt
