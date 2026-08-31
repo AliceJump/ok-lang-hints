@@ -103,6 +103,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
+        localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'media', 'characterManager')],
       },
     );
     CharacterManagerPanel.current = new CharacterManagerPanel(panel, extensionUri);
@@ -138,14 +139,23 @@ export class CharacterManagerPanel implements vscode.Disposable {
         }
       }),
     );
-    panel.webview.html = this.buildHtml();
+    panel.webview.html = this.buildHtml(panel.webview);
   }
 
-  private buildHtml(): string {
+  private buildHtml(webview: vscode.Webview): string {
     const file = path.join(this.extensionUri.fsPath, 'media', 'characterManager.html');
     try {
       const nonce = getNonce();
-      return injectWebviewLocalization(fs.readFileSync(file, 'utf-8').split('__CSP_NONCE__').join(nonce));
+      const resource = (name: string) => webview.asWebviewUri(
+        vscode.Uri.joinPath(this.extensionUri, 'media', 'characterManager', name),
+      ).toString(true);
+      return injectWebviewLocalization(
+        fs.readFileSync(file, 'utf-8')
+          .split('__CSP_NONCE__').join(nonce)
+          .split('__CSP_SOURCE__').join(webview.cspSource)
+          .split('__STYLE_URI__').join(resource('characterManager.css'))
+          .split('__APP_SCRIPT_URI__').join(resource('app.js')),
+      );
     } catch (error) {
       return `<!DOCTYPE html><html><meta charset="UTF-8"><body style="font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:20px">${tr('Unable to read character manager panel: {error}', { error: error instanceof Error ? error.message : String(error) })}</body></html>`;
     }
