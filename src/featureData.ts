@@ -17,8 +17,8 @@ export class FeatureData {
   private cache = new Map<string, FeatureTemplate>();
   private cocoMtimes = new Map<string, number>();
 
-  constructor(root: vscode.WorkspaceFolder | undefined) {
-    this.rootDir = root ? root.uri.fsPath : '';
+  constructor(root: vscode.WorkspaceFolder | string | undefined) {
+    this.rootDir = typeof root === 'string' ? root : root ? root.uri.fsPath : '';
   }
 
   /** 需要扫描的 coco 标注文件列表（主库 + 可选的 ok_tasks 扩展库） */
@@ -31,6 +31,10 @@ export class FeatureData {
 
   refresh(force = false): void {
     if (!this.rootDir) return;
+    if (force) {
+      this.cache.clear();
+      this.cocoMtimes.clear();
+    }
     for (const cocoPath of this.cocoFiles()) {
       if (!fs.existsSync(cocoPath)) continue;
       let mtime = 0;

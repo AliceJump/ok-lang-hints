@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src __CSP_SOURCE__; script-src __CSP_SOURCE__ 'nonce-__CSP_NONCE__'; img-src __CSP_SOURCE__ data:">
+  <title></title>
+  <link rel="stylesheet" href="__STYLE_URI__">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="title-row">
+        <div class="title"></div>
+        <div id="project"></div>
+        <div class="spacer"></div>
+        <input id="globalSearch" type="search">
+        <button id="refresh" class="utility-button" type="button">↻</button>
+      </div>
+      <nav class="tabs">
+        <button class="tab active" data-tab="characters" type="button"><span id="charactersBadge" class="badge">0</span></button>
+        <button class="tab" data-tab="effects" type="button"><span id="effectsBadge" class="badge">0</span></button>
+        <button class="tab" data-tab="locales" type="button"><span id="localesBadge" class="badge">0</span></button>
+        <button class="tab" data-tab="issues" type="button"><span id="issuesBadge" class="badge">0</span></button>
+      </nav>
+    </header>
+    <section id="summary" class="summary"></section>
+    <main class="content">
+      <section id="charactersView" class="view active split">
+        <aside class="sidebar">
+          <div class="filters">
+            <select id="starFilter"><option value=""></option></select>
+            <select id="elementFilter"><option value=""></option></select>
+            <select id="professionFilter"><option value=""></option></select>
+            <select id="skillTypeFilter"><option value=""></option></select>
+            <label class="filter-check"><input id="enhancementOnly" type="checkbox"><span></span></label>
+            <label class="filter-check"><input id="issueOnly" type="checkbox"><span></span></label>
+          </div>
+          <div class="list-head"><span id="characterCount"></span><span class="spacer"></span><span></span></div>
+          <div id="characterList" class="scroll"></div>
+        </aside>
+        <section class="detail"><div id="characterDetail" class="scroll"></div></section>
+      </section>
+      <section id="effectsView" class="view column-view">
+        <div class="effect-toolbar">
+          <input id="effectSearch" type="search">
+          <select id="effectCategory"><option value=""></option></select>
+          <select id="effectUsage"><option value=""></option><option value="used"></option><option value="unused"></option><option value="unknown"></option></select>
+          <button id="addEffectCategory" class="action-button action-add compact" type="button"></button>
+          <button id="addEffect" class="action-button action-add compact" type="button"></button>
+          <span id="effectCount" class="item-sub"></span>
+        </div>
+        <div id="effectList" class="scroll"></div>
+      </section>
+      <section id="localesView" class="view column-view">
+        <div class="locale-toolbar"><span></span><span class="item-sub"></span></div>
+        <div id="localeTable" class="table-wrap"></div>
+      </section>
+      <section id="issuesView" class="view column-view">
+        <div class="issues-toolbar">
+          <input id="issueSearch" type="search">
+          <select id="issueSeverity"><option value=""></option><option value="error"></option><option value="warning"></option><option value="info"></option></select>
+          <span id="issueCount" class="item-sub"></span>
+        </div>
+        <div id="issueList" class="scroll"></div>
+      </section>
+      <div id="loading"><div></div></div>
+      <div id="fatal"></div>
+    </main>
+    <div id="modalBackdrop" class="modal-backdrop">
+      <div class="modal" role="dialog" aria-modal="true">
+        <div class="modal-head"><div id="modalTitle" class="modal-title"></div><div class="spacer"></div><button id="modalClose" class="utility-button" type="button">✕</button></div>
+        <div id="modalBody" class="modal-body"></div>
+        <div id="modalError" class="form-error modal-error"></div>
+        <div class="modal-actions"><button id="modalCancel" class="action-button action-cancel" type="button"></button><button id="modalSave" class="action-button action-save" type="button"></button></div>
+      </div>
+    </div>
+  </div>
+  <div id="characterManagerI18n" hidden>__I18N_JSON__</div>
+  <script src="__APP_SCRIPT_URI__"></script>
+</body>
+</html>

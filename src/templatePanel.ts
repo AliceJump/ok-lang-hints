@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { FeatureData } from './featureData';
 import { cropTemplateThumbFile, openAnnotatedImage } from './pngCrop';
 import { featureAliases } from './providers';
+import { tr, webviewStrings } from './localization';
 
 /** 发送给 webview 的模板元数据（不含图片） */
 interface TemplateMeta {
@@ -44,7 +45,7 @@ async function insertIntoPythonEditor(text: string): Promise<void> {
   }
   if (!editor) {
     await vscode.env.clipboard.writeText(text);
-    void vscode.window.showWarningMessage(`没有可用的 Python 编辑器，已改为复制：${text}`);
+    void vscode.window.showWarningMessage(tr('No Python editor is available; copied instead: {text}', { text }));
     return;
   }
   await editor.insertSnippet(new vscode.SnippetString(text));
@@ -142,7 +143,7 @@ class GalleryController {
         if (typeof msg.text === 'string' && msg.text) {
           const text = `${primaryFeatureAlias()}.${msg.text}`;
           await vscode.env.clipboard.writeText(text);
-          void vscode.window.showInformationMessage(`已复制：${text}`);
+          void vscode.window.showInformationMessage(tr('Copied: {text}', { text }));
         }
         break;
       case 'insert':
@@ -181,12 +182,12 @@ class GalleryController {
       const file = await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: 'ok-lang-hints: 正在生成原图标注…',
+          title: tr('ok-lang-hints: Generating source image annotation…'),
         },
         async () => openAnnotatedImage(imagePath, name, bbox!, this.thumbDir, this.features.root),
       );
       if (!file) {
-        void vscode.window.showWarningMessage('生成标注图失败：原图解码失败或文件缺失');
+        void vscode.window.showWarningMessage(tr('Failed to generate annotated image: source image could not be decoded or was missing'));
         return;
       }
       await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(file));
@@ -251,7 +252,7 @@ export class TemplateGalleryPanel {
     }
     const panel = vscode.window.createWebviewPanel(
       'okLangHintsTemplates',
-      '模板面板',
+      tr('Template Gallery'),
       vscode.ViewColumn.Beside,
       {
         enableScripts: true,
@@ -293,6 +294,7 @@ function getNonce(): string {
 
 function galleryHtml(cspSource: string): string {
   const nonce = getNonce();
+  const strings = JSON.stringify(webviewStrings()).replace(/</g, '\\u003c');
   const csp = [
     "default-src 'none'",
     `img-src data: ${cspSource}`,
@@ -300,7 +302,7 @@ function galleryHtml(cspSource: string): string {
     "style-src 'unsafe-inline'",
   ].join('; ');
   return `<!DOCTYPE html>
-<html lang="zh-cn">
+<html>
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
@@ -411,13 +413,15 @@ function galleryHtml(cspSource: string): string {
 </head>
 <body>
   <div class="toolbar">
-    <input id="search" type="text" placeholder="搜索模板名…" />
+    <input id="search" type="text" />
     <span id="count"></span>
-    <span class="hint">单击=插入到代码 · 双击=复制 · 悬停缩略图点👁=查看原图（红框标注位置）</span>
+    <span class="hint"></span>
   </div>
   <div id="grid"></div>
   <div id="empty" class="empty" style="display:none"></div>
 <script nonce="${nonce}">
+  const I18N = ${strings};
+  const t = (key, args = {}) => (I18N[key] || key).replace(/\{(\w+)\}/g, (_, name) => String(args[name] ?? '{' + name + '}'));
   const vscode = acquireVsCodeApi();
   const grid = document.getElementById('grid');
   const search = document.getElementById('search');
@@ -427,11 +431,17 @@ function galleryHtml(cspSource: string): string {
   let metas = [];
   let loadedCount = 0;
   let failedCount = 0;
+  document.documentElement.lang = navigator.language || 'en';
+  document.title = t('templatesTitle');
+  search.placeholder = t('templatesSearch');
+  document.querySelector('.hint').textContent = t('templatesHint');
 
   function updateCount() {
-    const base = shownCount() + '/' + metas.length + ' 个模板';
+    const base = t('templatesCount', { shown: shownCount(), total: metas.length });
     const stat = (loadedCount || failedCount)
-      ? ' · 缩略图 ' + loadedCount + ' 成功' + (failedCount ? ' / ' + failedCount + ' 失败' : '')
+      ? ' · ' + (failedCount
+        ? t('thumbnailStatsWithFailures', { loaded: loadedCount, failed: failedCount })
+        : t('thumbnailStats', { loaded: loadedCount }))
       : '';
     countEl.textContent = base + stat;
   }
@@ -446,8 +456,8 @@ function galleryHtml(cspSource: string): string {
     const card = document.createElement('div');
     card.className = 'card';
     card.dataset.name = meta.name;
-    card.title = meta.name + '\\n尺寸: ' + meta.width + '×' + meta.height +
-      '\\nbbox: [' + meta.bbox.join(', ') + ']\\n来源: ' + meta.imagePath;
+    card.title = meta.name + '\\n' + t('templateSize', { width: meta.width, height: meta.height }) +
+      '\\nbbox: [' + meta.bbox.join(', ') + ']\\n' + t('templateSource', { path: meta.imagePath });
 
     const box = document.createElement('div');
     box.className = 'thumb-box';
@@ -460,7 +470,7 @@ function galleryHtml(cspSource: string): string {
     const openBtn = document.createElement('button');
     openBtn.className = 'open-btn';
     openBtn.textContent = '👁';
-    openBtn.title = '查看原图（红框标注位置）';
+    openBtn.title = t('viewOriginal');
     openBtn.addEventListener('click', (e) => {
       e.stopPropagation(); // 不触发卡片的 click
       vscode.postMessage({
@@ -512,10 +522,10 @@ function galleryHtml(cspSource: string): string {
     emptyEl.textContent = '';
     if (metas.length === 0) {
       emptyEl.style.display = '';
-      emptyEl.textContent = '未找到任何模板。\\n请确认工作区存在 assets/coco_annotations.json\\n（或 ok_tasks/assets/coco_annotations.json）。';
+      emptyEl.textContent = t('noTemplatesWithHint');
     } else if (shown === 0) {
       emptyEl.style.display = '';
-      emptyEl.textContent = '没有匹配「' + search.value.trim() + '」的模板。';
+      emptyEl.textContent = t('noTemplateMatch', { query: search.value.trim() });
     }
   }
 
@@ -541,9 +551,9 @@ function galleryHtml(cspSource: string): string {
     img.addEventListener('error', () => {
       failedCount++;
       const ph = card.querySelector('.placeholder');
-      if (ph) { ph.textContent = '加载失败'; ph.style.opacity = '.8'; }
+      if (ph) { ph.textContent = t('loadFailed'); ph.style.opacity = '.8'; }
       // 把失败的 URI 记到卡片 tooltip，便于诊断（如 localResourceRoots 未放行）
-      card.title += '\\n[缩略图加载失败] ' + url;
+      card.title += '\\n[' + t('thumbnailLoadFailed') + '] ' + url;
       updateCount();
     });
     card.querySelector('.thumb-box').appendChild(img);

@@ -36,6 +36,41 @@
 - 模板图片在扩展激活时后台预热并缓存，hover 和补全详情避免重复解码 4K 原图。
 - 标注或模板 PNG 变化后自动清理缓存并重新预热；批量文件变化使用防抖处理。
 
+### ok-script 任务启动器
+
+- 从目标项目的 `src/config.py` / `config.py` 安全解析一次性任务和触发任务。
+- 后台采集任务的运行时 `config`、`default_config`、`config_type`、说明、运行时名称与任务类型，并按字段并集生成完整参数表单。
+- 任务名、说明、参数名、分组名和选项标签会读取目标项目 `i18n/<locale>/LC_MESSAGES/ok.po` 显示翻译；原始配置 key、默认值和选项值始终保持不变，保存与运行不会写入翻译文本。
+- 支持布尔、数字、文本、多行文本、下拉、多选、列表、项目级联下拉和结构化条件序列。
+- 读取 `default_config_group` / `register_config_groups` 生成递归可折叠的子任务配置树；普通 `sub_configs` 继续按当前值动态显隐。
+- 每个项目、每个任务独立保存参数覆盖；覆盖仅对启动的子进程生效，不写回目标项目的 `configs/*.json`。
+- 可为单个任务设置额外命令行参数、环境变量和自动停止超时。
+- 运行日志输出到 **ok-script 任务启动** 输出频道，并支持停止整个子进程树。
+
+### 角色技能管理面板
+
+执行命令 **ok-script Lang Hints: 打开角色技能管理面板**，可在编辑器区打开角色数据库总览：
+
+- 左侧按星级、元素、职业、技能类型、强化组和诊断状态筛选角色。
+- 角色列表和详情页直接复用模板面板已经落盘的 96px 模板缩略图；缺失或加载失败时回退角色首字。
+- 右侧集中展示角色基础信息、名称多语言、技能说明、倍率、失衡、冷却、技力、基础效果和强化组效果。
+- 强化组同时展示触发条件、触发依赖效果、强化产出效果和可见脉冲标记。
+- 效果标签优先显示 `assets/lang/effect_names.json` 中与插件界面语言匹配的名称，同时保留原始效果 ID 作为副信息和定位键。
+- 可直接添加自定义技能，并对自定义技能执行修改、删除；同步技能不可删除，且 ID、名称、类别、元素、描述保持只读，只开放数值、基础效果和强化组修改。
+- 可对任意技能添加、修改、删除强化组；基础效果、触发依赖效果和强化产出效果均从 `effects.py` 按类别多选，不需要手写效果 ID。
+- 效果索引支持添加效果类别和添加效果定义；新增效果会同时维护 `EffectType` 与 `EFFECT_DESCRIPTIONS`。
+- 写入前自动生成 `.bak`，通过临时文件校验后原子替换源 JSON/Python 文件。
+- 效果索引按 `effects.py` 分类汇总，并反向列出每个效果被哪些角色、技能和强化组引用。
+- 名称本地化页使用类似字符串资源编辑器的矩阵，横向比较全部 locale，突出缺失名称。
+- 数据诊断检查角色主表/技能文件覆盖、重复技能 ID、未知效果 ID、强化声明不一致和缺失语言等问题。
+- 角色 JSON、语言文件、效果定义和诊断位置均可一键在编辑器中打开；源文件保存后面板自动刷新。
+- 角色管理面板采用独立的 HTML 外壳、CSS 视觉层和 JavaScript 交互层，便于分别维护结构、样式与行为。
+
+### 插件界面语言
+
+- 扩展清单、通知、输出频道、hover、模板面板、任务启动器、工具箱和角色技能管理面板均支持简体中文、繁体中文、英文、日文、韩文和西班牙文。
+- 插件 UI 默认跟随 VS Code 显示语言；其他语言回退英文。角色名称矩阵和项目业务数据仍使用目标项目自身的 locale 与原始协议值。
+
 ### 模板面板（可视化浏览全部模板）
 
 两种打开方式：
@@ -65,8 +100,26 @@
 - `assets/images/*.png`：模板预览使用的原图。
 - 如果存在，也会读取 `ok_tasks/assets/coco_annotations.json` 与 `ok_tasks/assets/images/*.png`。
 - `src/data/effects.py`：技能效果 ID 数据源（`EffectType` 枚举 + `EFFECT_DESCRIPTIONS` 中文描述），用于 `EffectType.XXX` / `"effect_id": "XXX"` 的提示。
+- `assets/lang/effect_names.json`：角色技能管理面板中的效果本地化名称；缺失时回退到效果描述和原始 ID。
 
-保存 JSON、COCO 标注、PNG 或 `effects.py` 后，扩展会自动刷新，无需重启项目。
+保存 JSON（包括效果名称）、COCO 标注、PNG 或 `effects.py` 后，扩展会自动刷新，无需重启项目。
+
+## 项目结构
+
+```text
+src/                         VS Code 扩展宿主 TypeScript 源码
+media/
+	icons/                     活动栏与视图图标
+	taskLauncher/              任务启动器 Webview（index.html、CSS、组件脚本）
+	characterManager/          角色技能管理 Webview（index.html、CSS、交互脚本）
+python/                      随扩展发布的任务发现、探测与执行辅助脚本
+scripts/                     开发期生成与回归测试工具，不打入 VSIX
+l10n/                        扩展宿主运行时本地化资源
+package.nls*.json            扩展清单本地化资源
+out/                         TypeScript 编译产物（由构建生成）
+```
+
+每个外置 Webview 的 HTML、CSS 和 JavaScript 均放在同一功能目录中；宿主通过 CSP 限制和 `asWebviewUri()` 加载资源。
 
 ## 安装
 
@@ -79,11 +132,20 @@ npm run compile
 npx @vscode/vsce package --allow-missing-repository
 ```
 
-然后在 VS Code 中：`Ctrl+Shift+P` → **Extensions: Install from VSIX...** → 选择生成的 `ok-lang-hints-0.1.0.vsix`。
+然后在 VS Code 中：`Ctrl+Shift+P` → **Extensions: Install from VSIX...** → 选择生成的 `ok-lang-hints-0.5.0.vsix`。
 
 方式二（开发调试）：
 
 用 VS Code 打开本项目根目录，按 `F5`（使用 `ok-lang-hints/.vscode/launch.json` 的配置）启动扩展开发宿主，在宿主窗口打开任意 Python 文件即可看到效果。
+
+## 自动发布
+
+- Pull Request 和 `main` 推送会运行 `CI`：校验版本、编译、执行任务启动器 DOM 回归、打包 VSIX，并上传 14 天构建产物。
+- `main` 的 `CI` 成功后会运行 `Release`。工作流读取 `package.json` 版本；当对应的 `v<version>` Release 尚不存在时，自动创建标签、生成发布说明并上传 VSIX。
+- `package.json`、`package-lock.json` 根版本必须一致。发布新版本前只需先提升版本号，例如 `0.5.0` 对应 `v0.5.0`。
+- GitHub Release 使用仓库内置的 `GITHUB_TOKEN`，不需要手工配置 Secret。
+- 若要同步发布到 Visual Studio Marketplace，请在仓库 **Settings → Secrets and variables → Actions → Secrets** 新增 `VSCE_PAT`。未配置时只跳过 Marketplace，GitHub Release 仍正常创建。
+- `Release` 也支持从 Actions 页面手动触发，但仅允许从 `main` 发布。
 
 ## 配置
 
@@ -97,6 +159,13 @@ npx @vscode/vsce package --allow-missing-repository
 | `okLangHints.enableInlayHints` | `true` | 是否启用幽灵注释 |
 | `okLangHints.featureAliases` | `["fL", "FeatureList"]` | 模板别名列表；别名会用于模板补全和 hover 识别 |
 | `okLangHints.effectsFile` | `src/data/effects.py` | 技能效果 ID 定义文件（`EffectType` 枚举与 `EFFECT_DESCRIPTIONS`），相对工作区根目录 |
+| `okLangHints.okScriptProjectPath` | 空 | 任务启动器使用的 ok-script 项目根目录；为空时尝试使用当前工作区 |
+| `okLangHints.okScriptPython` | 空 | 任务启动器使用的 Python；为空时优先使用目标项目 `.venv/Scripts/python.exe` |
+| `okLangHints.characterProjectPath` | 空 | 角色技能管理面板的数据项目；为空时使用 `okScriptProjectPath` 或当前工作区 |
+| `okLangHints.characterMasterFile` | `assets/data/characters.json` | 角色主表 JSON |
+| `okLangHints.characterSkillsDirectory` | `assets/data/character_skills` | 角色技能 JSON 目录 |
+| `okLangHints.characterLocaleFile` | `assets/lang/characters.json` | 角色名称多语言 JSON |
+| `okLangHints.characterAvatarTemplateRegex` | `^battle[_-]?icon[_-]?` | 角色头像模板名正则；有捕获组时使用第一组，否则使用匹配前缀后的剩余名称，与角色主表英文 slug 匹配；默认兼容 `battleicon`、`battle_icon` 和 `battle-icon` 前缀 |
 
 **命令**：
 
@@ -104,6 +173,7 @@ npx @vscode/vsce package --allow-missing-repository
 |---|---|---|
 | `ok-script Lang Hints: 打开模板面板` | `Ctrl+Alt+T`（macOS `Cmd+Alt+T`） | 聚焦活动栏中的模板侧边栏视图 |
 | `ok-script Lang Hints: 在编辑器中打开模板面板（大窗口）` | — | 在编辑器区打开大窗口网格视图 |
+| `ok-script Lang Hints: 打开角色技能管理面板` | — | 打开角色、技能、效果、强化组和名称本地化管理页 |
 
 ### 配置示例
 

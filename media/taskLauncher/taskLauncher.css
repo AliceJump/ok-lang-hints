@@ -1,0 +1,348 @@
+:root {
+  color-scheme: light dark;
+  --surface: var(--vscode-editorWidget-background, color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-foreground) 8%));
+  --surface-raised: var(--vscode-sideBar-background, var(--surface));
+  --surface-hover: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--surface) 86%, var(--vscode-focusBorder) 14%));
+  --border: var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 18%, transparent));
+  --border-strong: var(--vscode-focusBorder, #007acc);
+  --muted: var(--vscode-descriptionForeground, color-mix(in srgb, var(--vscode-editor-foreground) 64%, transparent));
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 11px;
+  --shadow: 0 4px 14px color-mix(in srgb, #000 15%, transparent);
+}
+
+* { box-sizing: border-box; }
+
+html, body { min-height: 100%; }
+
+body {
+  margin: 0;
+  color: var(--vscode-editor-foreground);
+  background: var(--vscode-editor-background);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size, 13px);
+}
+
+button,
+input,
+select,
+textarea { font: inherit; }
+
+button {
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 5px 11px;
+  cursor: pointer;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  transition: background-color .12s ease, border-color .12s ease, opacity .12s ease;
+}
+
+button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
+button:focus-visible { outline: 1px solid var(--border-strong); outline-offset: 2px; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+button.secondary {
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+}
+button.secondary:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
+
+.app-shell {
+  width: min(100%, 1080px);
+  margin: 0 auto;
+  padding: 12px 12px 28px;
+}
+
+.app-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 42px;
+  margin: -12px -12px 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--vscode-editor-background) 94%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.icon-button {
+  min-width: 34px;
+  padding-inline: 9px;
+  font-size: 15px;
+}
+
+.task-list {
+  display: grid;
+  gap: 10px;
+}
+
+.task-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
+  transition: border-color .14s ease, box-shadow .14s ease;
+}
+
+.task-card:hover {
+  border-color: color-mix(in srgb, var(--border-strong) 58%, var(--border));
+  box-shadow: var(--shadow);
+}
+
+.task-card.is-running { border-color: var(--border-strong); }
+
+.task-card__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px 13px 10px;
+}
+
+.task-card__identity { min-width: 0; }
+.task-card__title-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.task-card__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.task-card__kind {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.task-card__class {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-card__description {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.task-card__actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.task-card__actions button { white-space: nowrap; }
+.task-card__stop { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
+
+.task-card__footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 12px 11px;
+}
+
+.task-card__config-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 27px;
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+  font-size: 11px;
+}
+
+.config-panel {
+  display: none;
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 76%, var(--surface) 24%);
+}
+.config-panel.open { display: block; }
+
+.config-fields { display: grid; gap: 7px; }
+
+.config-section-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 14px 1px 7px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+.config-section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+.config-field {
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+}
+.config-field:hover { border-color: var(--border); background: color-mix(in srgb, var(--surface-hover) 54%, transparent); }
+.config-field.is-subconfig {
+  margin-left: 13px;
+  border-left: 2px solid color-mix(in srgb, var(--border-strong) 55%, var(--border));
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.config-field__label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.config-field__description,
+.config-field__hint {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.config-field__description { margin-bottom: 6px; }
+.config-field__hint { margin-top: 4px; }
+
+.config-field input[type='text'],
+.config-field input[type='number'],
+.config-field select,
+.config-field textarea {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid var(--vscode-input-border, var(--border));
+  border-radius: var(--radius-sm);
+  padding: 5px 7px;
+  outline: none;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+}
+.config-field textarea { min-height: 78px; resize: vertical; line-height: 1.45; }
+.config-field select[multiple] { min-height: 112px; }
+.config-field input:focus,
+.config-field select:focus,
+.config-field textarea:focus { border-color: var(--border-strong); }
+.config-field input[type='checkbox'] { accent-color: var(--border-strong); }
+
+.switch-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  cursor: pointer;
+}
+.switch-field__state { color: var(--muted); font-size: 11px; }
+
+.config-group {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
+}
+.config-group .config-group { margin: 7px 0; background: color-mix(in srgb, var(--surface) 76%, transparent); }
+.config-group__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 5px 7px 5px 10px;
+  background: color-mix(in srgb, var(--vscode-sideBarSectionHeader-background, var(--surface)) 88%, transparent);
+}
+.config-group__header:hover { background: var(--surface-hover); }
+.config-group__header > .config-field { flex: 1; margin: -4px 0; padding: 5px 3px; }
+.config-group__header > .config-field:hover { border-color: transparent; background: transparent; }
+.config-group__title { flex: 1; min-width: 0; font-size: 12px; font-weight: 650; }
+.config-group__toggle {
+  flex: 0 0 auto;
+  min-width: 30px;
+  min-height: 27px;
+  padding: 3px 7px;
+  color: var(--vscode-button-secondaryForeground);
+  background: transparent;
+}
+.config-group__toggle:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
+.config-group__body { display: none; padding: 8px; border-top: 1px solid var(--border); }
+.config-group.open > .config-group__body { display: block; }
+
+.config-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 8;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin: 14px -12px -12px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--vscode-editor-background) 94%, transparent);
+  backdrop-filter: blur(8px);
+}
+.config-actions button { min-width: 112px; }
+
+.config-json-error { border-color: var(--vscode-inputValidation-errorBorder, #be1100) !important; }
+.config-broken,
+.config-empty {
+  margin: 4px 0;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.status-banner {
+  position: sticky;
+  bottom: 8px;
+  z-index: 30;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  box-shadow: var(--shadow);
+  font-size: 11px;
+  line-height: 1.45;
+  background: var(--surface-raised);
+}
+.status-banner.warn { border-color: var(--vscode-inputValidation-warningBorder, #b89500); background: var(--vscode-inputValidation-warningBackground, var(--surface-raised)); }
+.status-banner.error { border-color: var(--vscode-inputValidation-errorBorder, #be1100); background: var(--vscode-inputValidation-errorBackground, var(--surface-raised)); }
+.status-banner.ok { border-color: var(--vscode-inputValidation-infoBorder, var(--border-strong)); background: var(--vscode-inputValidation-infoBackground, var(--surface-raised)); }
+
+.empty-state {
+  margin: 46px auto 0;
+  max-width: 360px;
+  padding: 24px 18px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.7;
+  white-space: pre-line;
+}
+
+@media (max-width: 560px) {
+  .app-shell { padding-inline: 8px; }
+  .app-toolbar { margin-inline: -8px; padding-inline: 8px; }
+  .task-card__header { grid-template-columns: 1fr; }
+  .task-card__actions { justify-content: stretch; }
+  .task-card__actions button { flex: 1; }
+  .config-actions { flex-direction: column; }
+  .config-actions button { width: 100%; }
+}

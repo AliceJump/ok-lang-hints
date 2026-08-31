@@ -11,6 +11,7 @@ import {
 import { FeatureData, FeatureTemplate } from './featureData';
 import { EffectData, EffectEntry } from './effectData';
 import { cropTemplateToDataUrlCached } from './pngCrop';
+import { tr } from './localization';
 
 /** 匹配 self.lang.<模块>.<key>（支持 Unicode 标识符，如中文 OCR 文本；负向后视避免匹配 self.langx 之类） */
 const EXPR_RE = /(?<![\w.])self\.lang\.([\p{L}\p{N}_]+)\.([\p{L}\p{N}_]+)/gu;
@@ -107,7 +108,7 @@ export function formatEffect(entry: EffectEntry): vscode.MarkdownString {
   const md = new vscode.MarkdownString(undefined, true);
   md.appendCodeblock(entry.id, 'python');
   md.appendMarkdown(
-    `\n- 分类: \`${entry.category}\`` + `\n- 描述: ${entry.description}`,
+    `\n- ${tr('Category')}: \`${entry.category}\`` + `\n- ${tr('Description')}: ${entry.description}`,
   );
   return md;
 }
@@ -276,12 +277,12 @@ function formatEntry(entry: LangEntry, locale: string, title?: string): vscode.M
     const node = entry.locales[l];
     const v = nodeValue(node);
     const t = nodeType(node);
-    const mark = l === locale ? ' **← 当前**' : '';
+    const mark = l === locale ? ` **← ${tr('Current')}**` : '';
     const valCell = v !== undefined ? `\`${escapeCell(v)}\`` : '—';
     const typeCell = t !== undefined ? `\`${t}\`` : '—';
     return `| ${l} | ${typeCell} | ${valCell} |${mark}`;
   }).join('\n');
-  md.appendMarkdown(`\n\n| 语言 | 类型 | 值 |\n| --- | --- | --- |\n${rows}`);
+  md.appendMarkdown(`\n\n| ${tr('Language')} | ${tr('Type')} | ${tr('Value')} |\n| --- | --- | --- |\n${rows}`);
   return md;
 }
 
@@ -296,14 +297,14 @@ function formatFeature(ft: FeatureTemplate): vscode.MarkdownString {
   md.appendCodeblock(`fL.${ft.name}`, 'python');
   const img = cropTemplateToDataUrlCached(ft.imagePath, ft.bbox);
   if (img) {
-    md.appendMarkdown(`\n![模板预览](${img})\n`);
+    md.appendMarkdown(`\n![${tr('Template preview')}](${img})\n`);
   } else {
-    md.appendMarkdown('\n*(无法渲染模板预览)*\n');
+    md.appendMarkdown(`\n*(${tr('Unable to render template preview')})*\n`);
   }
   md.appendMarkdown(
-    `\n- 模板名: \`${ft.name}\`` +
-      `\n- 尺寸: \`${ft.width} × ${ft.height}\`` +
-      `\n- 来源: \`${ft.imagePath}\`` +
+    `\n- ${tr('Template name')}: \`${ft.name}\`` +
+      `\n- ${tr('Size')}: \`${ft.width} × ${ft.height}\`` +
+      `\n- ${tr('Source')}: \`${ft.imagePath}\`` +
       `\n- bbox: \`x=${ft.bbox[0]} y=${ft.bbox[1]} w=${ft.bbox[2]} h=${ft.bbox[3]}\``,
   );
   return md;
@@ -412,7 +413,7 @@ export class LangHoverProvider implements vscode.HoverProvider {
         const entry = this.data.poEntry('ocr', om.pattern);
         if (!entry) continue;
         const md = formatEntry(entry, currentLocale(), `match=re.compile(r"${om.pattern}")`);
-        md.appendMarkdown('\n\n> 运行时 `fix_match_regex` 会用 `ocr.po` 翻译该正则后再 `re.compile`。');
+        md.appendMarkdown(`\n\n> ${tr('At runtime, fix_match_regex translates this pattern using ocr.po before calling re.compile.')}`);
         return new vscode.Hover(md);
       }
     }
@@ -518,7 +519,7 @@ export class LangCompletionProvider implements vscode.CompletionItemProvider {
     if (/(?<![\w.])self\.lang\.$/.test(before)) {
       return this.data.modules().map((m) => {
         const item = new vscode.CompletionItem(m, vscode.CompletionItemKind.Module);
-        item.detail = `${this.data.keys(m).length} keys`;
+        item.detail = tr('{count} keys', { count: this.data.keys(m).length });
         return item;
       });
     }
