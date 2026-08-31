@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseEffects } from './effectData';
-import { tr } from './localization';
+import { projectLocale, tr } from './localization';
 
 export type CharacterIssueSeverity = 'error' | 'warning' | 'info';
 export type CharacterSourceKind = 'character' | 'master' | 'locale' | 'effects';
@@ -24,6 +24,7 @@ export interface CharacterIssue {
 
 export interface CharacterEffectRef {
   effectId: string;
+  displayName: string;
   value?: unknown;
   duration?: unknown;
   target?: string;
@@ -95,6 +96,7 @@ export interface CharacterEffectUsage {
 
 export interface CharacterEffectView {
   id: string;
+  displayName: string;
   description: string;
   category: string;
   defined: boolean;
@@ -132,12 +134,14 @@ export interface CharacterDataPaths {
   skillsDir: string;
   localeFile: string;
   effectsFile: string;
+  effectNamesFile: string;
 }
 
 export interface CharacterDataSources {
   masterFile: string;
   localeFile: string;
   effectsFile: string;
+  effectNamesFile: string;
   characterFiles: Map<string, string>;
   characterFilesByName: Map<string, string>;
 }
@@ -186,6 +190,32 @@ function numberValue(value: unknown, fallback = 0): number {
 
 function booleanValue(value: unknown, fallback = false): boolean {
   return typeof value === 'boolean' ? value : fallback;
+}
+
+function readEffectNames(file: string): Map<string, string> {
+  const result = new Map<string, string>();
+  if (!fs.existsSync(file)) return result;
+  let root: unknown;
+  try {
+    root = JSON.parse(fs.readFileSync(file, 'utf-8'));
+  } catch {
+    return result;
+  }
+  if (!isObject(root)) return result;
+  const locale = projectLocale();
+  const fallbackLocales = [...new Set([locale, 'zh_CN', 'en_US'])];
+  for (const [effectId, rawLocales] of Object.entries(root)) {
+    if (!isObject(rawLocales)) continue;
+    let name = '';
+    for (const candidate of fallbackLocales) {
+      const node = rawLocales[candidate];
+      if (!isObject(node)) continue;
+      name = stringValue(node['string']) || stringValue(node['pattern']);
+      if (name) break;
+    }
+    if (name) result.set(effectId, name);
+  }
+  return result;
 }
 
 function readJsonObject(
@@ -287,6 +317,7 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
     masterFile: paths.masterFile,
     localeFile: paths.localeFile,
     effectsFile: paths.effectsFile,
+    effectNamesFile: paths.effectNamesFile,
     characterFiles: new Map(),
     characterFilesByName: new Map(),
   };
@@ -337,6 +368,7 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
     addIssue('error', 'missing-effects-file', tr('Effect definition file not found: {path}', { path: paths.effectsFile }), { kind: 'effects' });
   }
   const effectDefinitions = parseEffects(effectsText);
+  const effectNames = readEffectNames(paths.effectNamesFile);
   const effectCategories = parseEffectCategories(effectsText);
   const effectTerms = parseEffectTermMap(effectsText);
   const pendingUsages: PendingUsage[] = [];
@@ -359,6 +391,7 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
     const object = isObject(raw) ? raw : {};
     const ref: CharacterEffectRef = {
       effectId,
+      displayName: effectNames.get(effectId) || effectDefinitions.get(effectId)?.description || effectId,
       known: effectDefinitions.has(effectId),
       inferred,
     };
@@ -611,6 +644,7 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
   for (const entry of effectDefinitions.values()) {
     effectViews.set(entry.id, {
       id: entry.id,
+      displayName: effectNames.get(entry.id) || entry.description || entry.id,
       description: entry.description,
       category: entry.category,
       defined: true,
@@ -623,6 +657,7 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
     if (!effect) {
       effect = {
         id: pending.effectId,
+        displayName: effectNames.get(pending.effectId) || pending.effectId,
         description: tr('Not defined in effects.py'),
         category: '__undefined__',
         defined: false,
@@ -693,6 +728,7 @@ export function configuredCharacterDataPaths(
     skillsDirectory?: string;
     localeFile?: string;
     effectsFile?: string;
+    effectNamesFile?: string;
   } = {},
 ): CharacterDataPaths {
   const resolve = (value: string | undefined, fallback: string) => {
@@ -705,5 +741,6 @@ export function configuredCharacterDataPaths(
     skillsDir: resolve(configured.skillsDirectory, 'assets/data/character_skills'),
     localeFile: resolve(configured.localeFile, 'assets/lang/characters.json'),
     effectsFile: resolve(configured.effectsFile, 'src/data/effects.py'),
+    effectNamesFile: resolve(configured.effectNamesFile, 'assets/lang/effect_names.json'),
   };
 }

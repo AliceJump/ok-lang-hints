@@ -511,6 +511,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
     watch(paths.skillsDir, '*.json');
     watch(path.dirname(paths.localeFile), path.basename(paths.localeFile));
     watch(path.dirname(paths.effectsFile), path.basename(paths.effectsFile));
+    watch(path.dirname(paths.effectNamesFile), path.basename(paths.effectNamesFile));
   }
 
   private disposeWatchers(): void {

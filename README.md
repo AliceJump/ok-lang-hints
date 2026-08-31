@@ -54,6 +54,7 @@
 - 左侧按星级、元素、职业、技能类型、强化组和诊断状态筛选角色。
 - 右侧集中展示角色基础信息、名称多语言、技能说明、倍率、失衡、冷却、技力、基础效果和强化组效果。
 - 强化组同时展示触发条件、触发依赖效果、强化产出效果和可见脉冲标记。
+- 效果标签优先显示 `assets/lang/effect_names.json` 中与插件界面语言匹配的名称，同时保留原始效果 ID 作为副信息和定位键。
 - 可直接添加自定义技能，并对自定义技能执行修改、删除；同步技能不可删除，且 ID、名称、类别、元素、描述保持只读，只开放数值、基础效果和强化组修改。
 - 可对任意技能添加、修改、删除强化组；基础效果、触发依赖效果和强化产出效果均从 `effects.py` 按类别多选，不需要手写效果 ID。
 - 效果索引支持添加效果类别和添加效果定义；新增效果会同时维护 `EffectType` 与 `EFFECT_DESCRIPTIONS`。
@@ -97,8 +98,9 @@
 - `assets/images/*.png`：模板预览使用的原图。
 - 如果存在，也会读取 `ok_tasks/assets/coco_annotations.json` 与 `ok_tasks/assets/images/*.png`。
 - `src/data/effects.py`：技能效果 ID 数据源（`EffectType` 枚举 + `EFFECT_DESCRIPTIONS` 中文描述），用于 `EffectType.XXX` / `"effect_id": "XXX"` 的提示。
+- `assets/lang/effect_names.json`：角色技能管理面板中的效果本地化名称；缺失时回退到效果描述和原始 ID。
 
-保存 JSON、COCO 标注、PNG 或 `effects.py` 后，扩展会自动刷新，无需重启项目。
+保存 JSON（包括效果名称）、COCO 标注、PNG 或 `effects.py` 后，扩展会自动刷新，无需重启项目。
 
 ## 安装
 

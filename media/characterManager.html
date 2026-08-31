@@ -29,7 +29,7 @@
     font-size: var(--vscode-font-size, 13px);
     overflow: hidden;
   }
-  button, input, select {
+  button, input, select, textarea {
     font: inherit;
     color: inherit;
   }
@@ -48,7 +48,7 @@
   }
   button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
   button.icon { padding: 4px 7px; min-width: 28px; }
-  input, select {
+  input, select, textarea {
     border: 1px solid var(--vscode-input-border, transparent);
     border-radius: 3px;
     background: var(--vscode-input-background);
@@ -56,7 +56,8 @@
     padding: 5px 8px;
     outline: none;
   }
-  input:focus, select:focus { border-color: var(--accent); }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  input::placeholder, textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
   #app { height: 100%; display: flex; flex-direction: column; }
   .topbar {
     flex: 0 0 auto;
@@ -227,10 +228,18 @@
     padding: 2px 7px;
     font-size: 11px;
   }
-  .chip.effect { cursor: pointer; font-family: var(--vscode-editor-font-family); }
+  .chip.effect { cursor: pointer; padding-right: 5px; }
   .chip.effect:hover { border-color: var(--accent); }
   .chip.unknown { border-color: var(--danger); color: var(--danger); }
   .chip.inferred { border-style: dashed; }
+  .effect-chip-name { font-weight: 600; }
+  .effect-chip-id {
+    border-left: 1px solid var(--border);
+    padding-left: 5px;
+    color: var(--muted);
+    font-family: var(--vscode-editor-font-family);
+    font-size: 9px;
+  }
   .locales-inline {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
@@ -284,7 +293,21 @@
     background: color-mix(in srgb, var(--accent) 7%, transparent);
     border-radius: 0 4px 4px 0;
   }
-  .enhancement-name { font-weight: 700; }
+  .enhancement-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 30px;
+  }
+  .enhancement-name { flex: 1 1 auto; min-width: 0; font-weight: 700; }
+  .enhancement-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+  button.enhancement-action {
+    min-width: 68px;
+    border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+    padding: 4px 9px;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0,0,0,.18);
+  }
   .enhancement-trigger { margin-top: 4px; line-height: 1.4; }
   .pulse { color: var(--info); font-size: 10px; margin-left: 5px; }
   .empty {
@@ -318,6 +341,7 @@
     padding: 8px 7px;
   }
   .effect-card:hover { background: var(--hover); }
+  .effect-name { font-size: 13px; font-weight: 700; }
   .effect-id { font-family: var(--vscode-editor-font-family); font-weight: 700; word-break: break-all; }
   .effect-desc { line-height: 1.4; }
   .usage-list { margin-top: 5px; color: var(--muted); font-size: 10px; }
@@ -389,6 +413,27 @@
   .form-field input, .form-field select, .form-field textarea { width: 100%; }
   .form-field textarea { min-height: 76px; resize: vertical; }
   .form-field textarea.json { min-height: 125px; font-family: var(--vscode-editor-font-family); font-size: 11px; }
+  .locked-notice {
+    grid-column: 1 / -1;
+    border: 1px solid color-mix(in srgb, var(--info) 55%, var(--border));
+    border-left: 3px solid var(--info);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--info) 8%, transparent);
+    padding: 8px 10px;
+    line-height: 1.45;
+  }
+  .readonly-value {
+    min-height: 30px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--muted);
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--vscode-input-background) 55%, transparent);
+    padding: 6px 8px;
+    color: var(--muted);
+    cursor: default;
+    user-select: text;
+  }
+  .readonly-value.multiline { min-height: 76px; line-height: 1.5; white-space: pre-wrap; }
   .effect-editor { display: grid; grid-template-columns: minmax(230px, .8fr) minmax(300px, 1.2fr); gap: 10px; }
   .effect-select { min-height: 210px; font-family: var(--vscode-editor-font-family); font-size: 11px; }
   .effect-editor-hint { color: var(--muted); font-size: 10px; margin-top: 4px; }
@@ -402,7 +447,12 @@
   .form-check { display: flex; align-items: center; gap: 6px; min-height: 30px; }
   .form-check input { width: auto; }
   .form-error { color: var(--danger); min-height: 18px; margin-top: 7px; white-space: pre-wrap; }
-  .danger-button { background: var(--vscode-inputValidation-errorBackground, #5a1d1d); color: var(--vscode-errorForeground, #fff); }
+  button.danger-button {
+    border-color: color-mix(in srgb, var(--danger) 65%, var(--border));
+    background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+    color: var(--vscode-errorForeground, #fff);
+  }
+  button.danger-button:hover { background: color-mix(in srgb, var(--danger) 32%, var(--vscode-inputValidation-errorBackground, #5a1d1d)); }
   @media (max-width: 900px) {
     .summary { grid-template-columns: repeat(4, 1fr); }
     .sidebar { flex-basis: 240px; }
@@ -580,6 +630,13 @@
     return input;
   }
 
+  function readonlyControl(value, multiline) {
+    const node = element('div', 'readonly-value' + (multiline ? ' multiline' : ''), text(value) || '—');
+    node.setAttribute('role', 'textbox');
+    node.setAttribute('aria-readonly', 'true');
+    return node;
+  }
+
   function selectControl(value, options) {
     const select = document.createElement('select');
     const all = [...new Set([value, ...options].filter(Boolean))];
@@ -601,7 +658,7 @@
     }
     const effects = [...snapshot.effects];
     for (const id of initialMap.keys()) {
-      if (!effects.some((effect) => effect.id === id)) effects.unshift({ id, category: '__undefined__', description: t('unknownCurrentEffect'), defined: false, usages: [] });
+      if (!effects.some((effect) => effect.id === id)) effects.unshift({ id, displayName: id, category: '__undefined__', description: t('unknownCurrentEffect'), defined: false, usages: [] });
     }
     const categories = new Map();
     for (const effect of effects) {
@@ -612,7 +669,8 @@
     for (const [category, items] of categories) {
       const group = document.createElement('optgroup'); group.label = category;
       for (const effect of items) {
-        const option = new Option(effect.id + ' — ' + effect.description, effect.id);
+        const displayName = effect.displayName || effect.description || effect.id;
+        const option = new Option(displayName + (displayName === effect.id ? '' : ' · ' + effect.id) + ' — ' + effect.description, effect.id);
         option.selected = initialMap.has(effect.id);
         group.appendChild(option);
       }
@@ -651,8 +709,9 @@
         if (!values.has(id)) values.set(id, normalizeInitial(id));
         const value = values.get(id);
         const row = element('div', 'effect-param-row');
-        row.appendChild(element('div', 'effect-param-title', id));
         const definition = snapshot.effects.find((effect) => effect.id === id);
+        const displayName = definition?.displayName || definition?.description || id;
+        row.appendChild(element('div', 'effect-param-title', displayName + (displayName === id ? '' : ' · ' + id)));
         row.appendChild(element('div', 'effect-param-desc', definition?.description || t('unknownEffect')));
         const grid = element('div', 'effect-param-grid');
         const valueInput = inputControl(value.value, 'number');
@@ -723,16 +782,22 @@
         cooldown: inputControl(value.cooldown), spiritCost: inputControl(value.spiritCost, 'number'), description: textareaControl(value.description),
         effects: createEffectEditor(value.effects, false),
       };
-      controls.skillId.disabled = synced;
-      controls.name.disabled = synced;
-      controls.skillType.disabled = synced;
-      controls.element.disabled = synced;
-      controls.description.disabled = synced;
-      form.appendChild(formField(t('skillId'), controls.skillId)); form.appendChild(formField(t('skillName'), controls.name));
-      form.appendChild(formField(t('skillType'), controls.skillType)); form.appendChild(formField(t('element'), controls.element));
+      if (synced) {
+        const notice = element('div', 'locked-notice', '🔒 ' + t('syncedSkillLocked'));
+        notice.setAttribute('role', 'note');
+        form.appendChild(notice);
+        form.appendChild(formField(t('skillId'), readonlyControl(value.skillId)));
+        form.appendChild(formField(t('skillName'), readonlyControl(value.name)));
+        form.appendChild(formField(t('skillType'), readonlyControl(value.skillType)));
+        form.appendChild(formField(t('element'), readonlyControl(value.element)));
+      } else {
+        form.appendChild(formField(t('skillId'), controls.skillId)); form.appendChild(formField(t('skillName'), controls.name));
+        form.appendChild(formField(t('skillType'), controls.skillType)); form.appendChild(formField(t('element'), controls.element));
+      }
       form.appendChild(formField(t('damageMultiplier'), controls.damageMultiplier)); form.appendChild(formField(t('staggerValue'), controls.staggerValue));
       form.appendChild(formField(t('cooldownField'), controls.cooldown)); form.appendChild(formField(t('spiritCostField'), controls.spiritCost));
-      form.appendChild(formField(t('skillDescription'), controls.description, true)); form.appendChild(formField(t('baseEffectsMulti'), controls.effects.element, true));
+      form.appendChild(formField(t('skillDescription'), synced ? readonlyControl(value.description, true) : controls.description, true));
+      form.appendChild(formField(t('baseEffectsMulti'), controls.effects.element, true));
       return controls;
     }, (controls) => {
       const data = {
@@ -849,11 +914,11 @@
     const localeText = Object.values(character.locales || {}).join(' ');
     const skillText = character.skills.map((skill) => [
       skill.skillId, skill.name, skill.skillType, skill.element, skill.description,
-      ...skill.effects.map((effect) => effect.effectId),
+      ...skill.effects.flatMap((effect) => [effect.effectId, effect.displayName]),
       ...skill.enhancements.flatMap((enhancement) => [
         enhancement.name, enhancement.triggerText, enhancement.enhancementEffect,
-        ...enhancement.triggerEffects.map((effect) => effect.effectId),
-        ...enhancement.effects.map((effect) => effect.effectId),
+        ...enhancement.triggerEffects.flatMap((effect) => [effect.effectId, effect.displayName]),
+        ...enhancement.effects.flatMap((effect) => [effect.effectId, effect.displayName]),
       ]),
     ].join(' ')).join(' ');
     return normalized([character.characterId, character.name, character.master?.en, localeText, character.element, character.profession, character.weaponType, skillText].join(' '));
@@ -921,6 +986,11 @@
     return effect ? effect.description : t('undefinedEffect');
   }
 
+  function effectDisplayName(effectId, fallback) {
+    const effect = snapshot.effects.find((item) => item.id === effectId);
+    return fallback || effect?.displayName || effect?.description || effectId;
+  }
+
   function focusEffect(effectId) {
     setTab('effects');
     $('effectSearch').value = effectId;
@@ -933,14 +1003,19 @@
       return;
     }
     for (const effect of effects) {
+      const displayName = effectDisplayName(effect.effectId, effect.displayName);
       const suffix = [
         effect.value !== undefined && effect.value !== null ? t('valueLabel') + '=' + effect.value : '',
         effect.duration !== undefined && effect.duration !== null && effect.duration !== '' ? 'duration=' + effect.duration : '',
         effect.count !== undefined ? 'count=' + effect.count : '',
         effect.target ? 'target=' + effect.target : '',
       ].filter(Boolean).join(' · ');
-      const title = effectDescription(effect.effectId) + (suffix ? '\n' + suffix : '') + (effect.inferred ? '\n' + t('inferredFromTriggerText') : '');
-      container.appendChild(makeChip(effect.effectId, 'effect ' + (!effect.known ? 'unknown ' : '') + (effect.inferred ? 'inferred' : ''), title, () => focusEffect(effect.effectId)));
+      const title = displayName + (displayName === effect.effectId ? '' : '\n' + effect.effectId) + '\n' + effectDescription(effect.effectId)
+        + (suffix ? '\n' + suffix : '') + (effect.inferred ? '\n' + t('inferredFromTriggerText') : '');
+      const chip = makeChip('', 'effect ' + (!effect.known ? 'unknown ' : '') + (effect.inferred ? 'inferred' : ''), title, () => focusEffect(effect.effectId));
+      chip.appendChild(element('span', 'effect-chip-name', displayName));
+      if (displayName !== effect.effectId) chip.appendChild(element('span', 'effect-chip-id', effect.effectId));
+      container.appendChild(chip);
     }
   }
 
@@ -1031,11 +1106,15 @@
       for (let enhancementIndex = 0; enhancementIndex < skill.enhancements.length; enhancementIndex++) {
         const enhancement = skill.enhancements[enhancementIndex];
         const block = element('section', 'enhancement');
+        const enhancementHead = element('div', 'enhancement-head');
         const name = element('div', 'enhancement-name', enhancement.name);
         if (enhancement.visiblePulse) name.appendChild(element('span', 'pulse', t('visiblePulse')));
-        name.appendChild(button(t('modify'), 'secondary icon', () => showEnhancementEditor(character, skill, enhancement, enhancementIndex)));
-        name.appendChild(button(t('delete'), 'danger-button icon', () => confirmDelete(enhancement.name, () => mutate({ action: 'deleteEnhancement', characterId: character.characterId, skillId: skill.skillId, enhancementIndex }))));
-        block.appendChild(name);
+        enhancementHead.appendChild(name);
+        const enhancementActions = element('div', 'enhancement-actions');
+        enhancementActions.appendChild(button('✎ ' + t('modify'), 'secondary enhancement-action', () => showEnhancementEditor(character, skill, enhancement, enhancementIndex), t('modifyEnhancement')));
+        enhancementActions.appendChild(button('× ' + t('delete'), 'danger-button enhancement-action', () => confirmDelete(enhancement.name, () => mutate({ action: 'deleteEnhancement', characterId: character.characterId, skillId: skill.skillId, enhancementIndex }))));
+        enhancementHead.appendChild(enhancementActions);
+        block.appendChild(enhancementHead);
         if (enhancement.triggerText) block.appendChild(element('div', 'enhancement-trigger', enhancement.triggerText));
         if (enhancement.enhancementEffect) block.appendChild(element('div', 'item-sub', enhancement.enhancementEffect));
         const triggerLine = element('div', 'effect-line');
@@ -1061,7 +1140,7 @@
   }
 
   function effectHaystack(effect) {
-    return normalized([effect.id, effect.description, effect.category, ...effect.usages.flatMap((usage) => [usage.characterName, usage.skillName, usage.enhancementName, usage.scope])].join(' '));
+    return normalized([effect.id, effect.displayName, effect.description, effect.category, ...effect.usages.flatMap((usage) => [usage.characterName, usage.skillName, usage.enhancementName, usage.scope])].join(' '));
   }
 
   function renderEffects() {
@@ -1086,6 +1165,7 @@
     for (const effect of effects) {
       const card = element('div', 'effect-card');
       const left = element('div');
+      left.appendChild(element('div', 'effect-name', effect.displayName || effect.description || effect.id));
       const id = element('div', 'effect-id', effect.id);
       id.style.cursor = 'pointer'; id.title = t('clickCopyEffectId'); id.addEventListener('click', () => postCopy(effect.id));
       left.appendChild(id);
