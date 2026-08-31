@@ -5,3 +5,4 @@ out/
 .vscode-test/
 .vscode/
 configs/
+.vscodeignore

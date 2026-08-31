@@ -1,5 +1,5 @@
 .vscode/**
-src/**
+src/
 tsconfig.json
 node_modules/**
 **/*.map
@@ -7,3 +7,13 @@ node_modules/**
 *.vsix
 .git/**
 scripts/**
+configs/**
+logs/**/*.txt
+logs/**/*.log
+**/logs/
+**/configs/
+.vscode/settings.json
+.vscode/extensions.json
+.vscode/tasks.json
+.vscode/launch.json
+.vscode/ok-lang-hints-*.json

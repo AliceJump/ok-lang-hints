@@ -2,7 +2,7 @@
   "name": "ok-lang-hints",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "AliceJump",
   "license": "MIT",
   "icon": "icon.png",
@@ -35,7 +35,10 @@
   "activationEvents": [
     "onLanguage:python",
     "onLanguage:json",
-    "onLanguage:jsonc"
+    "onLanguage:jsonc",
+    "onView:okLangHints.templateGallery",
+    "onView:okLangHints.taskLauncher",
+    "onView:okLangHints.toolbox"
   ],
   "main": "./out/extension.js",
   "l10n": "./l10n",

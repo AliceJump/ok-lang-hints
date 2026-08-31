@@ -132,7 +132,7 @@ npm run compile
 npx @vscode/vsce package --allow-missing-repository
 ```
 
-然后在 VS Code 中：`Ctrl+Shift+P` → **Extensions: Install from VSIX...** → 选择生成的 `ok-lang-hints-0.3.0.vsix`。
+然后在 VS Code 中：`Ctrl+Shift+P` → **Extensions: Install from VSIX...** → 选择生成的 `ok-lang-hints-0.4.0.vsix`。
 
 方式二（开发调试）：
 
