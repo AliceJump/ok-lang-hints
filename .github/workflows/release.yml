@@ -1,62 +1,37 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows:
-      - CI
-    types:
-      - completed
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
-  group: release
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   release:
-    outputs:
-      release_sha: ${{ steps.commit.outputs.sha }}
-      tag: ${{ steps.version.outputs.tag }}
-      vsix: ${{ steps.version.outputs.vsix }}
-    if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref_name == 'main') ||
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_branch == 'main' &&
-       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      JETBRAINS_PUBLISH_TOKEN: ${{ secrets.JETBRAINS_PUBLISH_TOKEN }}
+      PRIVATE_KEY: ${{ secrets.JETBRAINS_PRIVATE_KEY }}
+      PRIVATE_KEY_PASSWORD: ${{ secrets.JETBRAINS_PRIVATE_KEY_PASSWORD }}
+      CERTIFICATE_CHAIN: ${{ secrets.JETBRAINS_CERTIFICATE_CHAIN }}
+      VSCE_USE_OIDC: ${{ vars.VSCE_USE_OIDC }}
 
     steps:
-      - name: Resolve immutable release commit
-        id: commit
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
-          CURRENT_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT_NAME" = "workflow_run" ]; then
-            sha="$WORKFLOW_RUN_SHA"
-          else
-            sha="$CURRENT_SHA"
-          fi
-          if ! [[ "$sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            echo "Invalid release SHA: $sha" >&2
-            exit 1
-          fi
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-
-      - name: Check out validated source
+      - name: Check out tagged source and submodule
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.commit.outputs.sha }}
           fetch-depth: 0
           fetch-tags: true
+          submodules: recursive
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -64,65 +39,115 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install VS Code dependencies
         run: npm ci
 
-      - name: Resolve package metadata
+      - name: Verify synchronized release version
         id: version
         run: npm run --silent verify:version
 
-      - name: Check existing tag and release
-        id: existing
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+      - name: Test and package VS Code extension
+        run: |
+          npm test
+          npm run package
+
+      - name: Test and package JetBrains plugin
+        working-directory: jetbrains
+        run: ./gradlew test buildPlugin verifyPluginStructure verifyPluginConfiguration verifyPlugin
+
+      - name: Sign JetBrains plugin
+        id: jetbrains_sign
+        working-directory: jetbrains
         run: |
           set -euo pipefail
-          git fetch --tags --force
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "release_exists=true" >> "$GITHUB_OUTPUT"
-            echo "Release $TAG already exists; GitHub Release creation will be skipped."
+          if [ -n "${PRIVATE_KEY:-}" ] && [ -n "${PRIVATE_KEY_PASSWORD:-}" ] && [ -n "${CERTIFICATE_CHAIN:-}" ]; then
+            ./gradlew signPlugin verifyPluginSignature
+            signed=$(find build/distributions -maxdepth 1 -type f -name '*-signed.zip' -print -quit)
+            if [ -z "$signed" ]; then
+              echo "Signed JetBrains artifact was not generated." >&2
+              exit 1
+            fi
+            artifact="build/release/${{ steps.version.outputs.jetbrains_zip }}"
+            mkdir -p "$(dirname "$artifact")"
+            cp "$signed" "$artifact"
+            echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "release_exists=false" >> "$GITHUB_OUTPUT"
-            if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-              tagged_sha=$(git rev-list -n 1 "$TAG")
-              if [ "$tagged_sha" != "$RELEASE_SHA" ]; then
-                echo "Tag $TAG already points to $tagged_sha, not $RELEASE_SHA. Bump package.json before releasing." >&2
+            artifact="build/distributions/${{ steps.version.outputs.jetbrains_zip }}"
+            test -f "$artifact"
+            echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::JetBrains signing secrets are incomplete; the unsigned ZIP will only be attached to GitHub Release."
+          fi
+
+      - name: Publish to Visual Studio Marketplace
+        run: |
+          set -euo pipefail
+          if [ -n "${VSCE_PAT:-}" ]; then
+            npm run publish:marketplace
+          elif [ "${VSCE_USE_OIDC:-}" = "true" ]; then
+            echo "VSCE_PAT is not configured; using Visual Studio Marketplace trusted publishing (OIDC)."
+            output=$(mktemp)
+            if ! npx @vscode/vsce publish --oidc --packagePath "${{ steps.version.outputs.vsix }}" 2>&1 | tee "$output"; then
+              if grep -Eqi 'already exists|version .* exists|duplicate' "$output"; then
+                echo "Visual Studio Marketplace already contains this version; skipping duplicate upload."
+              else
                 exit 1
               fi
             fi
+          else
+            echo "::notice::Neither VSCE_PAT nor VSCE_USE_OIDC=true is configured; Visual Studio Marketplace publishing was skipped."
           fi
 
-      - name: Verify, compile, and test new release
-        if: steps.existing.outputs.release_exists != 'true'
-        run: npm test
-
-      - name: Package new release VSIX
-        if: steps.existing.outputs.release_exists != 'true'
-        run: npm run package
+      - name: Publish to JetBrains Marketplace
+        run: |
+          set -euo pipefail
+          if [ -z "${JETBRAINS_PUBLISH_TOKEN:-}" ]; then
+            echo "::notice::JETBRAINS_PUBLISH_TOKEN is not configured; JetBrains Marketplace publishing was skipped."
+            exit 0
+          fi
+          if [ "${{ steps.jetbrains_sign.outputs.signed }}" != "true" ]; then
+            echo "JetBrains Marketplace publishing requires all signing secrets." >&2
+            exit 1
+          fi
+          version="${{ steps.version.outputs.version }}"
+          if curl --silent --show-error --fail --location --range 0-0 \
+            "https://plugins.jetbrains.com/plugin/download?pluginId=com.alicejump.oklanghints&version=$version" \
+            --output /dev/null; then
+            echo "JetBrains Marketplace already contains version $version; skipping duplicate upload."
+            exit 0
+          fi
+          curl --fail-with-body \
+            --header "Authorization: Bearer $JETBRAINS_PUBLISH_TOKEN" \
+            -F "xmlId=com.alicejump.oklanghints" \
+            -F "file=@jetbrains/${{ steps.jetbrains_sign.outputs.artifact }}" \
+            https://plugins.jetbrains.com/api/updates/upload
 
       - name: Create GitHub Release
-        if: steps.existing.outputs.release_exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           VSIX: ${{ steps.version.outputs.vsix }}
-          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+          JETBRAINS_ARTIFACT: jetbrains/${{ steps.jetbrains_sign.outputs.artifact }}
         run: |
           set -euo pipefail
-          gh release create "$TAG" "$VSIX#$VSIX" \
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; asset creation is skipped for this retry."
+            exit 0
+          fi
+          gh release create "$TAG" \
+            "$VSIX#$VSIX" \
+            "$JETBRAINS_ARTIFACT#$(basename "$JETBRAINS_ARTIFACT")" \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$RELEASE_SHA" \
+            --target "$GITHUB_SHA" \
             --title "$TAG" \
             --generate-notes
-
-  publish-marketplace:
-    needs: release
-    if: needs.release.result == 'success'
-    uses: ./.github/workflows/publish-marketplace.yml
-    with:
-      release_sha: ${{ needs.release.outputs.release_sha }}
-      tag: ${{ needs.release.outputs.tag }}
-      vsix: ${{ needs.release.outputs.vsix }}
-    secrets: inherit

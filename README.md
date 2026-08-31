@@ -158,12 +158,51 @@ npx @vscode/vsce package --allow-missing-repository
 
 ## 自动发布
 
-- Pull Request 和 `main` 推送会运行 `CI`：校验版本、编译、执行任务启动器 DOM 回归、打包 VSIX，并上传 14 天构建产物。
-- `main` 的 `CI` 成功后会运行 `Release`。工作流读取 `package.json` 版本；当对应的 `v<version>` Release 尚不存在时，自动创建标签、生成发布说明并上传 VSIX。
-- `package.json`、`package-lock.json` 根版本必须一致。发布新版本前只需先提升版本号，例如 `0.5.0` 对应 `v0.5.0`。
-- GitHub Release 使用仓库内置的 `GITHUB_TOKEN`，不需要手工配置 Secret。
-- 若要同步发布到 Visual Studio Marketplace，请在仓库 **Settings → Secrets and variables → Actions → Secrets** 新增 `VSCE_PAT`。未配置时只跳过 Marketplace，GitHub Release 仍正常创建。
-- `Release` 也支持从 Actions 页面手动触发，但仅允许从 `main` 发布。
+- Pull Request 和 `main` 推送只运行 `CI`，同时测试并打包 VS Code 与 JetBrains 两端，不会发布。
+- **发布的唯一触发方式是推送一个尚不存在的 `vX.Y.Z` 标签**。工作流不提供手动发布，也不会因 `main` 推送自动发布。
+- `package.json`、`package-lock.json` 和 `jetbrains/gradle.properties` 的版本必须完全一致；标签必须等于 `v<version>`。
+- 标签工作流会测试两端，构建 VSIX 和 JetBrains ZIP，在同一个 GitHub Release 中上传两个安装包，然后按已配置的 Secret 发布两个 Marketplace。
+- GitHub Release 使用仓库内置 `GITHUB_TOKEN`；Marketplace 所需 Secret 统一配置在父仓库 `AliceJump/ok-lang-hints`，子仓库不保存发布凭据。
+
+发布示例：
+
+```bash
+# 一次更新 package.json、package-lock.json 和 JetBrains pluginVersion
+npm run version:sync -- 0.6.0
+npm test
+
+# 先提交并推送子仓库版本
+git -C jetbrains add .
+git -C jetbrains commit -m "chore(release): prepare v0.6.0"
+git -C jetbrains push origin main
+
+# 再提交父仓库版本和新的子模块指针
+git add package.json package-lock.json jetbrains
+git commit -m "chore(release): prepare v0.6.0"
+git push origin main
+
+# 只有这一步会触发发布
+git tag -a v0.6.0 -m "Release v0.6.0"
+git push origin v0.6.0
+```
+
+标签必须是首次推送的新标签；不要移动、覆盖或强制推送已发布标签。若构建失败，应修复代码、提升为新版本并推送新标签，而不是复用旧标签。
+
+需要的仓库 Secrets：
+
+| Secret | 获取方式 | 是否必需 |
+|---|---|---|
+| `VSCE_PAT` | Visual Studio Marketplace 发布 PAT | 可选；可改用 OIDC Trusted Publishing |
+| `JETBRAINS_PUBLISH_TOKEN` | JetBrains Marketplace 作者页 → My Tokens | 发布 JetBrains Marketplace 时必需 |
+| `JETBRAINS_PRIVATE_KEY` | JetBrains 插件签名用 PEM 私钥全文或 Base64 | JetBrains Marketplace 发布时必需 |
+| `JETBRAINS_PRIVATE_KEY_PASSWORD` | 生成私钥时设置的密码 | JetBrains Marketplace 发布时必需 |
+| `JETBRAINS_CERTIFICATE_CHAIN` | 与私钥配套的 `chain.crt` 全文或 Base64 | JetBrains Marketplace 发布时必需 |
+
+在 GitHub 仓库进入 **Settings → Secrets and variables → Actions → New repository secret**，逐项添加。缺少 Marketplace Secret 时，GitHub Release 仍会创建，对应商店发布会跳过；若设置了 JetBrains Token 但签名 Secret 不完整，工作流会失败以避免上传未签名插件。
+
+启用 VS Marketplace OIDC 时，另在 **Actions → Variables → New repository variable** 添加 `VSCE_USE_OIDC=true`；只有完成 Marketplace Trusted Publishing policy 后才启用。
+
+完整的 Token 获取、签名密钥生成和逐次发布步骤见 [RELEASING.md](RELEASING.md)。
 
 ## 配置
 

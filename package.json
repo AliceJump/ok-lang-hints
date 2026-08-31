@@ -211,6 +211,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "version:sync": "node scripts/release/sync-version.js",
     "verify:version": "node scripts/release/verify-version.js",
     "test": "npm run verify:version && npm run compile && npm run test:task-launcher",
     "test:task-launcher": "node scripts/test_task_launcher_subconfigs.js",
