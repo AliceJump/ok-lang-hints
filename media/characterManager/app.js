@@ -3,6 +3,7 @@ const t = (key, args = {}) => (I18N[key] || key).replace(/\{(\w+)\}/g, (_, name)
 const vscode = acquireVsCodeApi();
 const previousState = vscode.getState() || {};
 let snapshot = null;
+let avatars = {};
 let activeTab = previousState.activeTab || 'characters';
 let selectedCharacterId = previousState.selectedCharacterId || '';
 let modalSubmit = null;
@@ -322,11 +323,28 @@ function renderCharacterList() {
     main.append(element('div', 'item-name', character.name), element('div', 'item-sub', [character.star ? `${character.star}★` : t('unknownStar'), character.element || t('unknownElement'), character.profession || t('unknownProfession')].join(' · ')));
     const stats = element('div', 'item-count', `${character.skills.length} / ${character.skills.reduce((sum, skill) => sum + skill.enhancements.length, 0)}`);
     if (character.issueCount) stats.appendChild(element('span', `issue-dot ${character.errorCount ? 'error' : ''}`, character.issueCount));
-    item.append(element('div', 'avatar', character.name.slice(0, 1)), main, stats);
+    item.append(characterAvatar(character), main, stats);
     item.addEventListener('click', () => { selectedCharacterId = character.characterId; saveState(); renderCharacterList(); renderCharacterDetail(character); });
     $('characterList').appendChild(item);
   }
   renderCharacterDetail(characters.find((item) => item.characterId === selectedCharacterId) || characters[0]);
+}
+function characterAvatar(character, large = false) {
+  const avatar = element('div', `avatar${large ? ' avatar-large' : ''}`, character.name.slice(0, 1));
+  const url = avatars[character.characterId];
+  if (!url) return avatar;
+  const image = document.createElement('img');
+  image.src = url;
+  image.alt = character.name;
+  image.loading = 'lazy';
+  image.decoding = 'async';
+  avatar.textContent = '';
+  avatar.appendChild(image);
+  image.addEventListener('error', () => {
+    image.remove();
+    avatar.textContent = character.name.slice(0, 1);
+  }, { once: true });
+  return avatar;
 }
 function makeChip(label, className, title, onClick) {
   const chip = element('span', `chip ${className || ''}`, label);
@@ -354,14 +372,16 @@ function renderCharacterDetail(character) {
   clear($('characterDetail'));
   if (!character) { $('characterDetail').appendChild(element('div', 'empty', t('selectCharacter'))); return; }
   const header = element('div', 'character-header');
-  const left = element('div');
-  left.append(element('div', 'character-title', character.name), element('div', 'character-id', character.characterId + (character.master?.en ? ` · ${character.master.en}` : '')));
+  const left = element('div', 'character-identity');
+  const identityText = element('div');
+  identityText.append(element('div', 'character-title', character.name), element('div', 'character-id', character.characterId + (character.master?.en ? ` · ${character.master.en}` : '')));
   const meta = element('div', 'chips');
   for (const value of [character.star ? `${character.star}★` : t('unknownStar'), character.element || t('unknownElement'), character.profession || t('unknownProfession'), character.weaponType || t('unknownWeapon'), t('skillsCount', { count: character.skills.length }), t('enhancementsCount', { count: character.skills.reduce((sum, skill) => sum + skill.enhancements.length, 0) })]) meta.appendChild(makeChip(value));
-  left.appendChild(meta);
+  identityText.appendChild(meta);
   const locales = element('div', 'locales-inline');
   for (const locale of snapshot.summary.locales.slice(0, 6)) { const row = element('div', 'locale-name'); row.append(element('span', 'locale-key', locale), element('span', 'locale-value', character.locales[locale] || '—')); locales.appendChild(row); }
-  left.appendChild(locales);
+  identityText.appendChild(locales);
+  left.append(characterAvatar(character, true), identityText);
   const actions = element('div', 'character-actions');
   actions.appendChild(button(`↗ ${t('openCharacterJson')}`, 'action-button action-open', () => postOpen('character', { characterId: character.characterId }), t('openSource')));
   header.append(left, actions);
@@ -439,7 +459,7 @@ function renderIssues() {
   for (const issue of issues) { const row = element('div', 'issue-row'); row.append(element('div', `severity ${issue.severity}`, issue.severity), element('div', 'issue-code', issue.code), element('div', '', issue.message)); const payload = sourcePayload(issue.source); row.appendChild(payload ? button(`↗ ${t('openSource')}`, 'action-button action-open compact', () => postOpen(payload.kind, payload)) : element('span')); $('issueList').appendChild(row); }
 }
 function applyAllFilters() { if (!snapshot) return; if (activeTab === 'characters') renderCharacterList(); else if (activeTab === 'effects') renderEffects(); else if (activeTab === 'locales') renderLocales(); else renderIssues(); }
-function renderData(data) { snapshot = data; $('project').textContent = data.projectDir; $('fatal').classList.remove('show'); $('loading').classList.remove('show'); renderSummary(); setupFilters(); if (!selectedCharacterId || !data.characters.some((item) => item.characterId === selectedCharacterId)) selectedCharacterId = data.characters[0]?.characterId || ''; setTab(activeTab); }
+function renderData(data, avatarMap = {}) { snapshot = data; avatars = avatarMap; $('project').textContent = data.projectDir; $('fatal').classList.remove('show'); $('loading').classList.remove('show'); renderSummary(); setupFilters(); if (!selectedCharacterId || !data.characters.some((item) => item.characterId === selectedCharacterId)) selectedCharacterId = data.characters[0]?.characterId || ''; setTab(activeTab); }
 
 localizeStaticUi();
 for (const tab of document.querySelectorAll('.tab')) tab.addEventListener('click', () => setTab(tab.dataset.tab));
@@ -452,7 +472,7 @@ window.addEventListener('keydown', (event) => { if (event.key === 'Escape' && $(
 window.addEventListener('message', (event) => {
   const message = event.data;
   if (message.type === 'loading') { $('project').textContent = message.projectDir || ''; $('loading').classList.add('show'); $('fatal').classList.remove('show'); }
-  else if (message.type === 'data') renderData(message.snapshot);
+  else if (message.type === 'data') renderData(message.snapshot, message.avatars || {});
   else if (message.type === 'error') { $('loading').classList.remove('show'); $('fatal').textContent = message.text || t('loadFailed'); $('fatal').classList.add('show'); }
   else if (message.type === 'mutationResult') { if (message.ok) closeModal(); else $('modalError').textContent = message.text || t('saveFailed'); }
 });

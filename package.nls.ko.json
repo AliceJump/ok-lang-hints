@@ -24,5 +24,6 @@
   "config.characterProjectPath": "캐릭터·스킬 관리자가 사용할 프로젝트 루트입니다.",
   "config.characterMasterFile": "캐릭터 마스터 JSON입니다.",
   "config.characterSkillsDirectory": "캐릭터 스킬 JSON 디렉터리입니다.",
-  "config.characterLocaleFile": "캐릭터 이름 현지화 JSON입니다."
+  "config.characterLocaleFile": "캐릭터 이름 현지화 JSON입니다.",
+  "config.characterAvatarTemplateRegex": "캐릭터 아바타 템플릿 이름 정규식입니다. 캡처 그룹이 있으면 첫 번째 그룹을, 없으면 일치한 접두사 뒤의 이름을 영문 slug와 대조합니다. 기본값은 battleicon, battle_icon, battle-icon 접두사를 지원합니다."
 }

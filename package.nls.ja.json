@@ -24,5 +24,6 @@
   "config.characterProjectPath": "キャラクター・スキル管理で使用するプロジェクトルート。",
   "config.characterMasterFile": "キャラクターマスター JSON。",
   "config.characterSkillsDirectory": "キャラクタースキル JSON ディレクトリ。",
-  "config.characterLocaleFile": "キャラクター名ローカライズ JSON。"
+  "config.characterLocaleFile": "キャラクター名ローカライズ JSON。",
+  "config.characterAvatarTemplateRegex": "キャラクターアバターのテンプレート名正規表現。キャプチャグループがあれば最初のグループを、なければ一致した接頭辞より後の名前を英語 slug と照合します。既定では battleicon、battle_icon、battle-icon に対応します。"
 }

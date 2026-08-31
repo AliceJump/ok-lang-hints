@@ -24,5 +24,6 @@
   "config.characterProjectPath": "Project root used by the character and skill manager. Empty falls back to okScriptProjectPath and the current workspace.",
   "config.characterMasterFile": "Character master JSON relative to the character project root.",
   "config.characterSkillsDirectory": "Character skill JSON directory relative to the character project root.",
-  "config.characterLocaleFile": "Character name localization JSON relative to the character project root."
+  "config.characterLocaleFile": "Character name localization JSON relative to the character project root.",
+  "config.characterAvatarTemplateRegex": "Regular expression for avatar template names. The first capture group is used when present; otherwise the text after the matched prefix is compared with the character's English slug. Defaults to battleicon/battle_icon/battle-icon prefixes."
 }

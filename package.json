@@ -199,6 +199,11 @@
           "type": "string",
           "default": "assets/lang/characters.json",
           "description": "%config.characterLocaleFile%"
+        },
+        "okLangHints.characterAvatarTemplateRegex": {
+          "type": "string",
+          "default": "^battle[_-]?icon[_-]?",
+          "description": "%config.characterAvatarTemplateRegex%"
         }
       }
     }

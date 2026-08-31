@@ -63,6 +63,7 @@ export function activate(context: vscode.ExtensionContext): void {
       clearThumbDir(thumbDir);
       prewarm();
       repaintAllGalleries();
+      CharacterManagerPanel.refreshCurrent();
     }, DEBOUNCE_MS);
   };
 
@@ -156,6 +157,11 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   const taskLauncher = new TaskLauncherViewProvider(context.extensionUri);
+  const characterManagerDependencies = {
+    extensionUri: context.extensionUri,
+    features,
+    thumbDir,
+  };
   context.subscriptions.push(taskLauncher);
 
   context.subscriptions.push(
@@ -211,7 +217,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.window.registerWebviewViewProvider(
       CharacterManagerLauncherViewProvider.viewType,
-      new CharacterManagerLauncherViewProvider(context.extensionUri),
+      new CharacterManagerLauncherViewProvider(characterManagerDependencies),
     ),
     vscode.commands.registerCommand('okLangHints.showTemplates', () => {
       // 聚焦活动栏中的模板视图（左侧图标 Tab）
@@ -225,7 +231,7 @@ export function activate(context: vscode.ExtensionContext): void {
       void vscode.commands.executeCommand(`${TaskLauncherViewProvider.viewType}.focus`);
     }),
     vscode.commands.registerCommand('okLangHints.openCharacterManager', () => {
-      CharacterManagerPanel.show(context.extensionUri);
+      CharacterManagerPanel.show(characterManagerDependencies);
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('okLangHints')) {
@@ -239,6 +245,7 @@ export function activate(context: vscode.ExtensionContext): void {
         inlay.fire();
         jsonInlay.fire();
         repaintAllGalleries();
+        CharacterManagerPanel.refreshCurrent();
       }
     }),
   );

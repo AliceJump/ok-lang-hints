@@ -331,6 +331,16 @@ function thumbFileName(imagePath: string, bbox: [number, number, number, number]
   return `t_${hash}.png`;
 }
 
+/** 返回模板缩略图的确定性绝对路径，不创建文件。 */
+export function templateThumbFilePath(
+  imagePath: string,
+  bbox: [number, number, number, number],
+  outDir: string,
+  targetHeight = 96,
+): string {
+  return path.join(outDir, thumbFileName(imagePath, bbox, targetHeight));
+}
+
 /**
  * 把模板缩略图写成 PNG 文件（复用 data URL 裁剪缓存），返回文件绝对路径。
  * webview 中用 asWebviewUri 加载本地文件比 data: URL 更可靠。
@@ -341,7 +351,7 @@ export function cropTemplateThumbFile(
   outDir: string,
   targetHeight = 96,
 ): string | undefined {
-  const file = path.join(outDir, thumbFileName(imagePath, bbox, targetHeight));
+  const file = templateThumbFilePath(imagePath, bbox, outDir, targetHeight);
   try {
     if (fs.existsSync(file) && fs.statSync(file).size > 0) return file;
   } catch {
@@ -355,6 +365,20 @@ export function cropTemplateThumbFile(
     return file;
   } catch {
     return undefined;
+  }
+}
+
+/** 删除一个确定性模板缩略图；用于共享缓存中的定向失效。 */
+export function removeTemplateThumbFile(
+  imagePath: string,
+  bbox: [number, number, number, number],
+  outDir: string,
+  targetHeight = 96,
+): void {
+  try {
+    fs.rmSync(templateThumbFilePath(imagePath, bbox, outDir, targetHeight), { force: true });
+  } catch {
+    // 缩略图不存在或删除失败时忽略，后续仍可按需重建
   }
 }
 

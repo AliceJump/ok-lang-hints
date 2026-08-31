@@ -202,7 +202,11 @@ input::placeholder, textarea::placeholder { color: var(--vscode-input-placeholde
   font-weight: 700;
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  overflow: hidden;
+  flex: 0 0 auto;
 }
+.avatar img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.avatar-large { width: 64px; height: 64px; font-size: 22px; }
 .item-main { min-width: 0; }
 .item-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .item-sub { color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -229,6 +233,7 @@ input::placeholder, textarea::placeholder { color: var(--vscode-input-placeholde
   padding-bottom: 10px;
   margin-bottom: 10px;
 }
+.character-identity { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
 .character-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .character-title { font-size: 23px; font-weight: 700; }
 .character-id { color: var(--muted); font-family: var(--vscode-editor-font-family); font-size: 11px; }

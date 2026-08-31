@@ -52,6 +52,7 @@
 执行命令 **ok-script Lang Hints: 打开角色技能管理面板**，可在编辑器区打开角色数据库总览：
 
 - 左侧按星级、元素、职业、技能类型、强化组和诊断状态筛选角色。
+- 角色列表和详情页直接复用模板面板已经落盘的 96px 模板缩略图；缺失或加载失败时回退角色首字。
 - 右侧集中展示角色基础信息、名称多语言、技能说明、倍率、失衡、冷却、技力、基础效果和强化组效果。
 - 强化组同时展示触发条件、触发依赖效果、强化产出效果和可见脉冲标记。
 - 效果标签优先显示 `assets/lang/effect_names.json` 中与插件界面语言匹配的名称，同时保留原始效果 ID 作为副信息和定位键。
@@ -155,6 +156,7 @@ npx @vscode/vsce package --allow-missing-repository
 | `okLangHints.characterMasterFile` | `assets/data/characters.json` | 角色主表 JSON |
 | `okLangHints.characterSkillsDirectory` | `assets/data/character_skills` | 角色技能 JSON 目录 |
 | `okLangHints.characterLocaleFile` | `assets/lang/characters.json` | 角色名称多语言 JSON |
+| `okLangHints.characterAvatarTemplateRegex` | `^battle[_-]?icon[_-]?` | 角色头像模板名正则；有捕获组时使用第一组，否则使用匹配前缀后的剩余名称，与角色主表英文 slug 匹配；默认兼容 `battleicon`、`battle_icon` 和 `battle-icon` 前缀 |
 
 **命令**：
 

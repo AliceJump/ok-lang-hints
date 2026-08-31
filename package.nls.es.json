@@ -24,5 +24,6 @@
   "config.characterProjectPath": "Raíz del proyecto usada por el gestor de personajes y habilidades.",
   "config.characterMasterFile": "JSON maestro de personajes.",
   "config.characterSkillsDirectory": "Directorio JSON de habilidades de personajes.",
-  "config.characterLocaleFile": "JSON de localización de nombres de personajes."
+  "config.characterLocaleFile": "JSON de localización de nombres de personajes.",
+  "config.characterAvatarTemplateRegex": "Expresión regular para nombres de plantillas de avatar. Usa el primer grupo si existe; en caso contrario compara el texto posterior al prefijo coincidente con el slug inglés. Admite por defecto battleicon, battle_icon y battle-icon."
 }
