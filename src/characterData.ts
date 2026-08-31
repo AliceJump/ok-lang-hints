@@ -53,6 +53,8 @@ export interface CharacterSkillView {
   hasEnhancement: boolean;
   effects: CharacterEffectRef[];
   enhancements: CharacterEnhancementView[];
+  /** 仅面板新增的技能为 custom；同步技能的 ID/类别不可修改且不可删除。 */
+  source: 'synced' | 'custom';
 }
 
 export interface CharacterMasterView {
@@ -118,6 +120,7 @@ export interface CharacterManagerSnapshot {
   loadedAt: string;
   characters: CharacterView[];
   effects: CharacterEffectView[];
+  effectCategories: string[];
   issues: CharacterIssue[];
   summary: CharacterDataSummary;
 }
@@ -220,6 +223,21 @@ function parseEffectTermMap(text: string): Map<string, string> {
   return result;
 }
 
+function parseEffectCategories(text: string): string[] {
+  const classStart = text.indexOf('class EffectType');
+  const classEnd = text.indexOf('# 效果描述映射', classStart);
+  if (classStart < 0 || classEnd < 0) return [];
+  const section = text.slice(classStart, classEnd);
+  const result: string[] = [];
+  const re = /^\s{4}#\s*(.+?)\s*$/gm;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(section)) !== null) {
+    const category = match[1].trim();
+    if (category && !result.includes(category)) result.push(category);
+  }
+  return result;
+}
+
 function inferEffectIds(text: string, terms: Map<string, string>): string[] {
   if (!text) return [];
   const sorted = [...terms.entries()].sort((a, b) => b[0].length - a[0].length);
@@ -315,6 +333,7 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
     addIssue('error', 'missing-effects-file', `找不到效果定义：${paths.effectsFile}`, { kind: 'effects' });
   }
   const effectDefinitions = parseEffects(effectsText);
+  const effectCategories = parseEffectCategories(effectsText);
   const effectTerms = parseEffectTermMap(effectsText);
   const pendingUsages: PendingUsage[] = [];
   let effectReferenceCount = 0;
@@ -502,6 +521,7 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
           hasEnhancement,
           effects,
           enhancements,
+          source: rawSkill['_ok_lang_hints_custom'] === true ? 'custom' : 'synced',
         });
         skillCount++;
       }
@@ -617,6 +637,7 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
     loadedAt: new Date().toISOString(),
     characters,
     effects,
+    effectCategories,
     issues,
     summary: {
       masterCharacters: masterById.size,

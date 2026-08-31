@@ -350,12 +350,69 @@
   }
   #loading.show, #fatal.show { display: flex; }
   #fatal { color: var(--danger); }
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0,0,0,.58);
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    width: min(760px, 94vw);
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--vscode-editorWidget-background);
+    box-shadow: 0 12px 36px rgba(0,0,0,.42);
+  }
+  .modal-head, .modal-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-actions { justify-content: flex-end; border-bottom: none; border-top: 1px solid var(--border); }
+  .modal-title { font-size: 15px; font-weight: 700; }
+  .modal-body { overflow: auto; padding: 12px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 12px; }
+  .form-field { min-width: 0; }
+  .form-field.wide { grid-column: 1 / -1; }
+  .form-field label { display: block; margin-bottom: 3px; color: var(--muted); font-size: 11px; }
+  .form-field input, .form-field select, .form-field textarea { width: 100%; }
+  .form-field textarea { min-height: 76px; resize: vertical; }
+  .form-field textarea.json { min-height: 125px; font-family: var(--vscode-editor-font-family); font-size: 11px; }
+  .effect-editor { display: grid; grid-template-columns: minmax(230px, .8fr) minmax(300px, 1.2fr); gap: 10px; }
+  .effect-select { min-height: 210px; font-family: var(--vscode-editor-font-family); font-size: 11px; }
+  .effect-editor-hint { color: var(--muted); font-size: 10px; margin-top: 4px; }
+  .effect-params { display: flex; flex-direction: column; gap: 6px; max-height: 310px; overflow: auto; }
+  .effect-param-row { border: 1px solid var(--border); border-radius: 5px; padding: 6px 7px; background: var(--surface); }
+  .effect-param-title { font-family: var(--vscode-editor-font-family); font-size: 11px; font-weight: 700; margin-bottom: 5px; }
+  .effect-param-desc { color: var(--muted); font-size: 10px; margin-bottom: 5px; }
+  .effect-param-grid { display: grid; grid-template-columns: repeat(4, minmax(70px, 1fr)); gap: 5px; }
+  .effect-param-grid label { color: var(--muted); font-size: 9px; }
+  .effect-param-grid input, .effect-param-grid select { width: 100%; margin-top: 2px; }
+  .form-check { display: flex; align-items: center; gap: 6px; min-height: 30px; }
+  .form-check input { width: auto; }
+  .form-error { color: var(--danger); min-height: 18px; margin-top: 7px; white-space: pre-wrap; }
+  .danger-button { background: var(--vscode-inputValidation-errorBackground, #5a1d1d); color: var(--vscode-errorForeground, #fff); }
   @media (max-width: 900px) {
     .summary { grid-template-columns: repeat(4, 1fr); }
     .sidebar { flex-basis: 240px; }
     .effect-card { grid-template-columns: 1fr; }
     .issue-row { grid-template-columns: 60px 120px minmax(0,1fr); }
     .issue-row button { grid-column: 3; justify-self: start; }
+    .form-grid { grid-template-columns: 1fr; }
+    .form-field.wide { grid-column: 1; }
+    .effect-editor { grid-template-columns: 1fr; }
+    .effect-param-grid { grid-template-columns: repeat(2, 1fr); }
   }
 </style>
 </head>
@@ -398,6 +455,8 @@
         <input id="effectSearch" type="search" placeholder="搜索效果 ID、描述、角色或技能…">
         <select id="effectCategory"><option value="">全部分类</option></select>
         <select id="effectUsage"><option value="">全部效果</option><option value="used">仅已引用</option><option value="unused">仅未引用</option><option value="unknown">仅未知</option></select>
+        <button id="addEffectCategory" class="secondary">＋ 添加类别</button>
+        <button id="addEffect">＋ 添加效果</button>
         <span id="effectCount" class="item-sub"></span>
       </div>
       <div id="effectList" class="scroll"></div>
@@ -417,6 +476,14 @@
     <div id="loading"><div>正在读取角色、技能、效果与多语言数据…</div></div>
     <div id="fatal"></div>
   </main>
+  <div id="modalBackdrop" class="modal-backdrop">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head"><div id="modalTitle" class="modal-title"></div><div class="spacer"></div><button id="modalClose" class="secondary icon">✕</button></div>
+      <div id="modalBody" class="modal-body"></div>
+      <div id="modalError" class="form-error" style="padding:0 12px"></div>
+      <div class="modal-actions"><button id="modalCancel" class="secondary">取消</button><button id="modalSave">保存</button></div>
+    </div>
+  </div>
 </div>
 <script nonce="__CSP_NONCE__">
   const vscode = acquireVsCodeApi();
@@ -424,6 +491,7 @@
   let snapshot = null;
   let activeTab = previousState.activeTab || 'characters';
   let selectedCharacterId = previousState.selectedCharacterId || '';
+  let modalSubmit = null;
 
   const $ = (id) => document.getElementById(id);
   const text = (value) => value === undefined || value === null ? '' : String(value);
@@ -446,6 +514,245 @@
   }
   function postOpen(kind, extra) { vscode.postMessage(Object.assign({ type: 'openSource', kind }, extra || {})); }
   function postCopy(value) { vscode.postMessage({ type: 'copy', text: value }); }
+  function mutate(payload) { vscode.postMessage(Object.assign({ type: 'mutateCharacter' }, payload)); }
+  function mutateEffect(payload) { vscode.postMessage(Object.assign({ type: 'mutateEffect' }, payload)); }
+
+  function formField(label, input, wide) {
+    const field = element('div', 'form-field' + (wide ? ' wide' : ''));
+    field.appendChild(element('label', '', label));
+    field.appendChild(input);
+    return field;
+  }
+
+  function inputControl(value, type) {
+    const input = document.createElement('input');
+    input.type = type || 'text';
+    input.value = value === undefined || value === null ? '' : String(value);
+    return input;
+  }
+
+  function textareaControl(value, className) {
+    const input = document.createElement('textarea');
+    input.className = className || '';
+    input.value = value === undefined || value === null ? '' : String(value);
+    return input;
+  }
+
+  function selectControl(value, options) {
+    const select = document.createElement('select');
+    const all = [...new Set([value, ...options].filter(Boolean))];
+    for (const option of all) select.appendChild(new Option(option, option));
+    select.value = value || all[0] || '';
+    return select;
+  }
+
+  function createEffectEditor(initialEffects, idsOnly) {
+    const editor = element('div', 'effect-editor');
+    const left = element('div');
+    const select = document.createElement('select');
+    select.className = 'effect-select';
+    select.multiple = true;
+    const initialMap = new Map();
+    for (const effect of initialEffects || []) {
+      const id = effect.effectId || effect.effect_id || (typeof effect === 'string' ? effect : '');
+      if (id) initialMap.set(id, effect);
+    }
+    const effects = [...snapshot.effects];
+    for (const id of initialMap.keys()) {
+      if (!effects.some((effect) => effect.id === id)) effects.unshift({ id, category: '未定义', description: '当前数据中的未知效果', defined: false, usages: [] });
+    }
+    const categories = new Map();
+    for (const effect of effects) {
+      const list = categories.get(effect.category) || [];
+      list.push(effect); categories.set(effect.category, list);
+    }
+    for (const [category, items] of categories) {
+      const group = document.createElement('optgroup'); group.label = category;
+      for (const effect of items) {
+        const option = new Option(effect.id + ' — ' + effect.description, effect.id);
+        option.selected = initialMap.has(effect.id);
+        group.appendChild(option);
+      }
+      select.appendChild(group);
+    }
+    left.appendChild(select);
+    left.appendChild(element('div', 'effect-editor-hint', '按住 Ctrl / Cmd 可多选；选项来源于 effects.py，并按效果类别分组。'));
+    editor.appendChild(left);
+    const params = element('div', 'effect-params'); editor.appendChild(params);
+    const values = new Map();
+
+    const normalizeInitial = (id) => {
+      const raw = initialMap.get(id);
+      if (typeof raw === 'string' || !raw) return { effect_id: id, value: 0, duration: '', target: 'enemy', count: 1 };
+      return {
+        effect_id: id,
+        value: raw.value === undefined ? 0 : raw.value,
+        duration: raw.duration === undefined || raw.duration === null ? '' : raw.duration,
+        target: raw.target || 'enemy',
+        count: raw.count === undefined ? 1 : raw.count,
+      };
+    };
+
+    const renderParams = () => {
+      const selected = [...select.selectedOptions].map((option) => option.value);
+      clear(params);
+      if (idsOnly) {
+        params.appendChild(element('div', 'empty', selected.length ? selected.length + ' 个触发依赖效果已选择' : '未选择触发依赖效果'));
+        return;
+      }
+      if (!selected.length) {
+        params.appendChild(element('div', 'empty', '未选择效果'));
+        return;
+      }
+      for (const id of selected) {
+        if (!values.has(id)) values.set(id, normalizeInitial(id));
+        const value = values.get(id);
+        const row = element('div', 'effect-param-row');
+        row.appendChild(element('div', 'effect-param-title', id));
+        const definition = snapshot.effects.find((effect) => effect.id === id);
+        row.appendChild(element('div', 'effect-param-desc', definition?.description || '未知效果'));
+        const grid = element('div', 'effect-param-grid');
+        const valueInput = inputControl(value.value, 'number');
+        const durationInput = inputControl(value.duration);
+        const targetInput = selectControl(value.target, ['enemy', 'ally', 'self']);
+        const countInput = inputControl(value.count, 'number');
+        for (const [label, input, key, number] of [
+          ['value', valueInput, 'value', true], ['duration', durationInput, 'duration', false],
+          ['target', targetInput, 'target', false], ['count', countInput, 'count', true],
+        ]) {
+          const wrapper = element('label'); wrapper.textContent = label;
+          input.addEventListener('change', () => { value[key] = number ? Number(input.value || 0) : input.value; });
+          wrapper.appendChild(input); grid.appendChild(wrapper);
+        }
+        row.appendChild(grid); params.appendChild(row);
+      }
+    };
+    select.addEventListener('change', renderParams);
+    renderParams();
+    return {
+      element: editor,
+      getValue: () => {
+        const selected = [...select.selectedOptions].map((option) => option.value);
+        if (idsOnly) return selected;
+        return selected.map((id) => ({ ...normalizeInitial(id), ...(values.get(id) || {}), effect_id: id }));
+      },
+    };
+  }
+
+  function showModal(title, build, onSubmit, saveText) {
+    $('modalTitle').textContent = title;
+    $('modalError').textContent = '';
+    clear($('modalBody'));
+    const form = element('div', 'form-grid');
+    const controls = build(form) || {};
+    $('modalBody').appendChild(form);
+    $('modalSave').textContent = saveText || '保存';
+    modalSubmit = () => onSubmit(controls);
+    $('modalBackdrop').classList.add('show');
+    const first = form.querySelector('input,select,textarea');
+    if (first) first.focus();
+  }
+
+  function closeModal() {
+    $('modalBackdrop').classList.remove('show');
+    $('modalError').textContent = '';
+    modalSubmit = null;
+  }
+
+  function submitModal() {
+    if (!modalSubmit) return;
+    try { modalSubmit(); }
+    catch (error) { $('modalError').textContent = error.message || String(error); }
+  }
+
+  function skillTypeOptions() {
+    return ['普通攻击', '战技', '连携技', '终结技', '天赋', '潜能'];
+  }
+
+  function showSkillEditor(character, skill) {
+    const editing = !!skill;
+    const synced = editing && skill.source !== 'custom';
+    const value = skill || { skillId: character.characterId + '_skill', name: '', skillType: '战技', element: character.element, description: '', damageMultiplier: '', staggerValue: 0, cooldown: '', spiritCost: 0, effects: [] };
+    showModal(editing ? '修改技能' : '添加技能', (form) => {
+      const controls = {
+        skillId: inputControl(value.skillId), name: inputControl(value.name), skillType: selectControl(value.skillType, skillTypeOptions()),
+        element: inputControl(value.element), damageMultiplier: inputControl(value.damageMultiplier), staggerValue: inputControl(value.staggerValue, 'number'),
+        cooldown: inputControl(value.cooldown), spiritCost: inputControl(value.spiritCost, 'number'), description: textareaControl(value.description),
+        effects: createEffectEditor(value.effects, false),
+      };
+      controls.skillId.disabled = synced;
+      controls.name.disabled = synced;
+      controls.skillType.disabled = synced;
+      controls.element.disabled = synced;
+      controls.description.disabled = synced;
+      form.appendChild(formField('技能 ID', controls.skillId)); form.appendChild(formField('技能名称', controls.name));
+      form.appendChild(formField('技能类型', controls.skillType)); form.appendChild(formField('元素', controls.element));
+      form.appendChild(formField('伤害倍率', controls.damageMultiplier)); form.appendChild(formField('失衡值', controls.staggerValue));
+      form.appendChild(formField('冷却', controls.cooldown)); form.appendChild(formField('技力消耗', controls.spiritCost));
+      form.appendChild(formField('技能描述', controls.description, true)); form.appendChild(formField('基础效果（可多选）', controls.effects.element, true));
+      return controls;
+    }, (controls) => {
+      const data = {
+        skillId: controls.skillId.value, name: controls.name.value, skillType: controls.skillType.value,
+        element: controls.element.value, damageMultiplier: controls.damageMultiplier.value,
+        staggerValue: Number(controls.staggerValue.value || 0), cooldown: controls.cooldown.value,
+        spiritCost: Number(controls.spiritCost.value || 0), description: controls.description.value,
+        effects: controls.effects.getValue(),
+      };
+      mutate({ action: editing ? 'updateSkill' : 'addSkill', characterId: character.characterId, skillId: editing ? skill.skillId : undefined, data });
+    }, editing ? '修改' : '添加');
+  }
+
+  function showEnhancementEditor(character, skill, enhancement, index) {
+    const editing = !!enhancement;
+    const value = enhancement || { name: '', triggerText: '', triggerEffects: [], effects: [], enhancementEffect: '', visiblePulse: false };
+    showModal(editing ? '修改强化组' : '添加强化组', (form) => {
+      const controls = {
+        name: inputControl(value.name), triggerText: textareaControl(value.triggerText), enhancementEffect: textareaControl(value.enhancementEffect),
+        triggerEffects: createEffectEditor(value.triggerEffects, true),
+        effects: createEffectEditor(value.effects, false), visiblePulse: document.createElement('input'),
+      };
+      controls.visiblePulse.type = 'checkbox'; controls.visiblePulse.checked = value.visiblePulse === true;
+      form.appendChild(formField('强化组名称', controls.name));
+      const check = element('label', 'form-check'); check.appendChild(controls.visiblePulse); check.appendChild(element('span', '', '强化状态可见脉冲')); form.appendChild(formField('显示标记', check));
+      form.appendChild(formField('触发条件文本', controls.triggerText, true)); form.appendChild(formField('强化效果说明', controls.enhancementEffect, true));
+      form.appendChild(formField('触发依赖效果（可多选）', controls.triggerEffects.element, true)); form.appendChild(formField('强化产出效果（可多选）', controls.effects.element, true));
+      return controls;
+    }, (controls) => {
+      mutate({
+        action: editing ? 'updateEnhancement' : 'addEnhancement', characterId: character.characterId,
+        skillId: skill.skillId, enhancementIndex: editing ? index : undefined,
+        data: { name: controls.name.value, triggerText: controls.triggerText.value, enhancementEffect: controls.enhancementEffect.value,
+          triggerEffects: controls.triggerEffects.getValue(), effects: controls.effects.getValue(),
+          visiblePulse: controls.visiblePulse.checked },
+      });
+    }, editing ? '修改' : '添加');
+  }
+
+  function showEffectCategoryEditor() {
+    showModal('添加效果类别', (form) => {
+      const controls = { category: inputControl('') };
+      form.appendChild(formField('类别名称', controls.category, true));
+      return controls;
+    }, (controls) => mutateEffect({ action: 'addCategory', data: { category: controls.category.value } }), '添加');
+  }
+
+  function showEffectEditor() {
+    const categories = [...new Set((snapshot.effectCategories || snapshot.effects.map((effect) => effect.category)).filter((category) => category && category !== '未定义'))].sort();
+    showModal('添加效果', (form) => {
+      const controls = { effectId: inputControl(''), description: textareaControl(''), category: selectControl(categories[0] || '', categories) };
+      form.appendChild(formField('效果 ID（大写下划线）', controls.effectId));
+      form.appendChild(formField('效果类别', controls.category));
+      form.appendChild(formField('效果描述', controls.description, true));
+      return controls;
+    }, (controls) => mutateEffect({ action: 'addEffect', data: {
+      effectId: controls.effectId.value, category: controls.category.value, description: controls.description.value,
+    }}), '添加');
+  }
+
+  function confirmDelete(label, callback) {
+    if (confirm('确定删除“' + label + '”吗？\n保存前会自动创建 .bak 备份。')) callback();
+  }
 
   function setTab(tab) {
     activeTab = tab;
@@ -492,7 +799,7 @@
     fillSelect($('elementFilter'), snapshot.characters.map((item) => item.element || '未定'), '全部元素');
     fillSelect($('professionFilter'), snapshot.characters.map((item) => item.profession || '未定'), '全部职业');
     fillSelect($('skillTypeFilter'), snapshot.characters.flatMap((item) => item.skills.map((skill) => skill.skillType)), '全部技能类型');
-    fillSelect($('effectCategory'), snapshot.effects.map((item) => item.category), '全部分类');
+    fillSelect($('effectCategory'), snapshot.effectCategories || snapshot.effects.map((item) => item.category), '全部分类');
   }
 
   function characterHaystack(character) {
@@ -622,6 +929,7 @@
     left.appendChild(locales);
     header.appendChild(left);
     const actions = element('div');
+    actions.style.display = 'flex'; actions.style.gap = '6px'; actions.style.flexWrap = 'wrap';
     actions.appendChild(button('打开角色 JSON', 'secondary', () => postOpen('character', { characterId: character.characterId }), '在编辑器中打开源文件'));
     header.appendChild(actions);
     $('characterDetail').appendChild(header);
@@ -630,7 +938,10 @@
       $('characterDetail').appendChild(element('div', 'empty', '该角色尚无技能数据'));
       return;
     }
-    $('characterDetail').appendChild(element('div', 'section-title', '技能与强化效果'));
+    const skillSectionTitle = element('div', 'section-title');
+    skillSectionTitle.appendChild(element('span', '', '技能与强化效果'));
+    skillSectionTitle.appendChild(button('＋ 添加技能', 'secondary', () => showSkillEditor(character, null)));
+    $('characterDetail').appendChild(skillSectionTitle);
     for (const skill of character.skills) {
       const card = element('article', 'skill-card');
       const head = element('div', 'skill-head');
@@ -646,6 +957,12 @@
       skillMeta.appendChild(makeChip(skill.skillType));
       if (skill.element) skillMeta.appendChild(makeChip(skill.element));
       if (skill.hasEnhancement) skillMeta.appendChild(makeChip('强化态'));
+      skillMeta.appendChild(button('修改', 'secondary icon', () => showSkillEditor(character, skill)));
+      if (skill.source === 'custom') {
+        skillMeta.appendChild(button('删除', 'danger-button icon', () => confirmDelete(skill.name, () => mutate({ action: 'deleteSkill', characterId: character.characterId, skillId: skill.skillId }))));
+      } else {
+        skillMeta.appendChild(makeChip('同步技能 · ID/名称/类别/元素/描述锁定'));
+      }
       skillMeta.appendChild(button('打开', 'secondary icon', () => postOpen('character', { characterId: character.characterId, skillId: skill.skillId }), '打开并定位到技能'));
       head.appendChild(skillMeta);
       card.appendChild(head);
@@ -668,10 +985,13 @@
       appendEffectChips(effectChips, skill.effects);
       effects.appendChild(effectChips);
       body.appendChild(effects);
-      for (const enhancement of skill.enhancements) {
+      for (let enhancementIndex = 0; enhancementIndex < skill.enhancements.length; enhancementIndex++) {
+        const enhancement = skill.enhancements[enhancementIndex];
         const block = element('section', 'enhancement');
         const name = element('div', 'enhancement-name', enhancement.name);
         if (enhancement.visiblePulse) name.appendChild(element('span', 'pulse', '可见脉冲'));
+        name.appendChild(button('修改', 'secondary icon', () => showEnhancementEditor(character, skill, enhancement, enhancementIndex)));
+        name.appendChild(button('删除', 'danger-button icon', () => confirmDelete(enhancement.name, () => mutate({ action: 'deleteEnhancement', characterId: character.characterId, skillId: skill.skillId, enhancementIndex }))));
         block.appendChild(name);
         if (enhancement.triggerText) block.appendChild(element('div', 'enhancement-trigger', enhancement.triggerText));
         if (enhancement.enhancementEffect) block.appendChild(element('div', 'item-sub', enhancement.enhancementEffect));
@@ -689,6 +1009,9 @@
         block.appendChild(outputLine);
         body.appendChild(block);
       }
+      const addEnhancement = button('＋ 添加强化组', 'secondary', () => showEnhancementEditor(character, skill, null, -1));
+      addEnhancement.style.marginTop = '8px';
+      body.appendChild(addEnhancement);
       card.appendChild(body);
       $('characterDetail').appendChild(card);
     }
@@ -841,8 +1164,17 @@
   $('globalSearch').addEventListener('input', applyAllFilters);
   for (const id of ['starFilter', 'elementFilter', 'professionFilter', 'skillTypeFilter', 'enhancementOnly', 'issueOnly']) $(id).addEventListener('change', renderCharacterList);
   for (const id of ['effectSearch', 'effectCategory', 'effectUsage']) $(id).addEventListener(id === 'effectSearch' ? 'input' : 'change', renderEffects);
+  $('addEffectCategory').addEventListener('click', showEffectCategoryEditor);
+  $('addEffect').addEventListener('click', showEffectEditor);
   $('issueSearch').addEventListener('input', renderIssues);
   $('issueSeverity').addEventListener('change', renderIssues);
+  $('modalClose').addEventListener('click', closeModal);
+  $('modalCancel').addEventListener('click', closeModal);
+  $('modalSave').addEventListener('click', submitModal);
+  $('modalBackdrop').addEventListener('click', (event) => { if (event.target === $('modalBackdrop')) closeModal(); });
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && $('modalBackdrop').classList.contains('show')) closeModal();
+  });
 
   window.addEventListener('message', (event) => {
     const message = event.data;
@@ -856,6 +1188,9 @@
       $('loading').classList.remove('show');
       $('fatal').textContent = message.text || '加载失败';
       $('fatal').classList.add('show');
+    } else if (message.type === 'mutationResult') {
+      if (message.ok) closeModal();
+      else $('modalError').textContent = message.text || '保存失败';
     }
   });
 

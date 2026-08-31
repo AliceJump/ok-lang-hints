@@ -17,6 +17,39 @@ interface CharacterManagerMessage {
   skillId?: string;
   effectId?: string;
   text?: string;
+  action?: string;
+  enhancementIndex?: number;
+  data?: unknown;
+}
+
+type JsonObject = Record<string, unknown>;
+
+function isObject(value: unknown): value is JsonObject {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function requiredString(value: unknown, name: string): string {
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`${name}不能为空`);
+  return value.trim();
+}
+
+function optionalString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function finiteNumber(value: unknown, fallback = 0): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function effectArray(value: unknown, name: string): unknown[] {
+  if (!Array.isArray(value)) throw new Error(`${name}必须是 JSON 数组`);
+  for (const item of value) {
+    if (typeof item === 'string') continue;
+    if (!isObject(item) || typeof item.effect_id !== 'string' || !item.effect_id.trim()) {
+      throw new Error(`${name}中的每项必须是效果 ID 字符串或含 effect_id 的对象`);
+    }
+  }
+  return value;
 }
 
 function getNonce(): string {
@@ -134,8 +167,295 @@ export class CharacterManagerPanel implements vscode.Disposable {
           void vscode.window.showInformationMessage(`已复制：${message.text}`);
         }
         break;
+      case 'mutateCharacter':
+        await this.mutateCharacter(message);
+        break;
+      case 'mutateEffect':
+        await this.mutateEffect(message);
+        break;
       default:
         break;
+    }
+  }
+
+  private readCharacterFile(characterId: string): { file: string; root: JsonObject } {
+    const file = this.sources?.characterFiles.get(characterId);
+    if (!file || !fs.existsSync(file)) throw new Error(`找不到角色 ${characterId} 的技能文件`);
+    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    if (!isObject(parsed)) throw new Error('角色 JSON 顶层必须是对象');
+    if (!Array.isArray(parsed.skills)) parsed.skills = [];
+    return { file, root: parsed };
+  }
+
+  private findSkill(root: JsonObject, skillId: string): JsonObject {
+    const skills = root.skills as unknown[];
+    const skill = skills.find((item) => isObject(item) && item.skill_id === skillId);
+    if (!isObject(skill)) throw new Error(`找不到技能 ${skillId}`);
+    return skill;
+  }
+
+  private readEnhancements(skill: JsonObject): { items: JsonObject[]; singular: boolean } {
+    if (Array.isArray(skill.enhancements)) {
+      return { items: skill.enhancements.filter(isObject), singular: false };
+    }
+    return { items: isObject(skill.enhancement) ? [skill.enhancement] : [], singular: true };
+  }
+
+  private writeEnhancements(skill: JsonObject, items: JsonObject[], singular: boolean): void {
+    if (singular && items.length <= 1) {
+      skill.enhancement = items[0] || null;
+      delete skill.enhancements;
+    } else {
+      skill.enhancements = items;
+      delete skill.enhancement;
+    }
+    skill.has_enhancement = items.length > 0;
+  }
+
+  private sanitizeSkill(data: unknown, existing: JsonObject = {}): JsonObject {
+    if (!isObject(data)) throw new Error('技能数据格式无效');
+    return {
+      ...existing,
+      skill_id: requiredString(data.skillId, '技能 ID'),
+      name: requiredString(data.name, '技能名称'),
+      skill_type: requiredString(data.skillType, '技能类型'),
+      element: optionalString(data.element) || null,
+      description: optionalString(data.description),
+      damage_multiplier: optionalString(data.damageMultiplier) || null,
+      stagger_value: finiteNumber(data.staggerValue),
+      cooldown: optionalString(data.cooldown) || null,
+      spirit_cost: finiteNumber(data.spiritCost),
+      effects: effectArray(data.effects, '基础效果'),
+    };
+  }
+
+  private sanitizeEnhancement(data: unknown, existing: JsonObject = {}): JsonObject {
+    if (!isObject(data)) throw new Error('强化组数据格式无效');
+    const triggerEffects = effectArray(data.triggerEffects, '触发依赖效果')
+      .map((item) => typeof item === 'string' ? item : String((item as JsonObject).effect_id));
+    return {
+      ...existing,
+      name: requiredString(data.name, '强化组名称'),
+      trigger_condition: {
+        text: optionalString(data.triggerText),
+        effects: triggerEffects,
+      },
+      enhancement_effect: optionalString(data.enhancementEffect),
+      enhancement_visible_pulse: data.visiblePulse === true,
+      effects: effectArray(data.effects, '强化产出效果'),
+    };
+  }
+
+  private atomicWriteJson(file: string, root: JsonObject): void {
+    const backup = `${file}.bak`;
+    const temporary = `${file}.ok-lang-hints.tmp`;
+    fs.copyFileSync(file, backup);
+    try {
+      fs.writeFileSync(temporary, `${JSON.stringify(root, null, 2)}\n`, 'utf-8');
+      JSON.parse(fs.readFileSync(temporary, 'utf-8'));
+      fs.renameSync(temporary, file);
+    } catch (error) {
+      try { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); } catch { /* ignore cleanup */ }
+      throw error;
+    }
+  }
+
+  private async mutateCharacter(message: CharacterManagerMessage): Promise<void> {
+    try {
+      const characterId = requiredString(message.characterId, '角色 ID');
+      const { file, root } = this.readCharacterFile(characterId);
+      const action = requiredString(message.action, '修改操作');
+      const data = message.data;
+      switch (action) {
+        case 'updateCharacter':
+          throw new Error('角色基础信息来自同步数据，不允许修改');
+        case 'addSkill': {
+          const skill = this.sanitizeSkill(data);
+          const skills = root.skills as unknown[];
+          if (skills.some((item) => isObject(item) && item.skill_id === skill.skill_id)) {
+            throw new Error(`技能 ID ${skill.skill_id} 已存在`);
+          }
+          skill.has_enhancement = false;
+          skill.enhancement = null;
+          skill._ok_lang_hints_custom = true;
+          skills.push(skill);
+          break;
+        }
+        case 'updateSkill': {
+          const oldSkillId = requiredString(message.skillId, '原技能 ID');
+          const skill = this.findSkill(root, oldSkillId);
+          const updated = this.sanitizeSkill(data, skill);
+          if (skill._ok_lang_hints_custom !== true) {
+            updated.skill_id = oldSkillId;
+            updated.name = skill.name;
+            updated.skill_type = skill.skill_type;
+            updated.element = skill.element;
+            updated.description = skill.description;
+          }
+          const skills = root.skills as unknown[];
+          if (updated.skill_id !== oldSkillId && skills.some((item) => isObject(item) && item.skill_id === updated.skill_id)) {
+            throw new Error(`技能 ID ${updated.skill_id} 已存在`);
+          }
+          Object.assign(skill, updated);
+          break;
+        }
+        case 'deleteSkill': {
+          const skillId = requiredString(message.skillId, '技能 ID');
+          const skills = root.skills as unknown[];
+          const index = skills.findIndex((item) => isObject(item) && item.skill_id === skillId);
+          if (index < 0) throw new Error(`找不到技能 ${skillId}`);
+          const skill = skills[index];
+          if (!isObject(skill) || skill._ok_lang_hints_custom !== true) throw new Error('已同步技能不允许删除');
+          skills.splice(index, 1);
+          break;
+        }
+        case 'addEnhancement': {
+          const skill = this.findSkill(root, requiredString(message.skillId, '技能 ID'));
+          const state = this.readEnhancements(skill);
+          state.items.push(this.sanitizeEnhancement(data));
+          this.writeEnhancements(skill, state.items, state.singular);
+          break;
+        }
+        case 'updateEnhancement': {
+          const skill = this.findSkill(root, requiredString(message.skillId, '技能 ID'));
+          const state = this.readEnhancements(skill);
+          const index = message.enhancementIndex;
+          if (!Number.isInteger(index) || index! < 0 || index! >= state.items.length) throw new Error('强化组索引无效');
+          state.items[index!] = this.sanitizeEnhancement(data, state.items[index!]);
+          this.writeEnhancements(skill, state.items, state.singular);
+          break;
+        }
+        case 'deleteEnhancement': {
+          const skill = this.findSkill(root, requiredString(message.skillId, '技能 ID'));
+          const state = this.readEnhancements(skill);
+          const index = message.enhancementIndex;
+          if (!Number.isInteger(index) || index! < 0 || index! >= state.items.length) throw new Error('强化组索引无效');
+          state.items.splice(index!, 1);
+          this.writeEnhancements(skill, state.items, state.singular);
+          break;
+        }
+        default:
+          throw new Error(`不支持的修改操作：${action}`);
+      }
+      this.atomicWriteJson(file, root);
+      await this.panel.webview.postMessage({ type: 'mutationResult', ok: true, action, characterId });
+      await this.update(false);
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      await this.panel.webview.postMessage({ type: 'mutationResult', ok: false, text });
+      void vscode.window.showErrorMessage(`角色数据保存失败：${text}`);
+    }
+  }
+
+  private effectsFile(): string {
+    const file = this.sources?.effectsFile;
+    if (!file || !fs.existsSync(file)) throw new Error('找不到 effects.py');
+    return file;
+  }
+
+  private atomicWriteText(file: string, content: string): void {
+    const backup = `${file}.bak`;
+    const temporary = `${file}.ok-lang-hints.tmp`;
+    fs.copyFileSync(file, backup);
+    try {
+      fs.writeFileSync(temporary, content, 'utf-8');
+      fs.renameSync(temporary, file);
+    } catch (error) {
+      try { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); } catch { /* ignore cleanup */ }
+      throw error;
+    }
+  }
+
+  private async mutateEffect(message: CharacterManagerMessage): Promise<void> {
+    try {
+      const action = requiredString(message.action, '效果修改操作');
+      const data = message.data;
+      if (!isObject(data)) throw new Error('效果数据格式无效');
+      const file = this.effectsFile();
+      let text = fs.readFileSync(file, 'utf-8');
+      const eol = text.includes('\r\n') ? '\r\n' : '\n';
+      const lines = text.split(/\r?\n/);
+      const classStart = lines.findIndex((line) => /^class\s+EffectType\b/.test(line.trim()));
+      const descriptionsMarker = lines.findIndex((line, index) => index > classStart && line.trim() === '# 效果描述映射');
+      const descriptionsStart = lines.findIndex((line, index) => index > descriptionsMarker && line.trim().startsWith('EFFECT_DESCRIPTIONS'));
+      const termsStart = lines.findIndex((line, index) => index > descriptionsStart && line.trim().startsWith('# 效果术语映射'));
+      if (classStart < 0 || descriptionsMarker < 0 || descriptionsStart < 0 || termsStart < 0) {
+        throw new Error('effects.py 结构不完整，无法安全写入');
+      }
+      const findCategory = (category: string, start: number, end: number) => {
+        const marker = `# ${category}`;
+        for (let index = start + 1; index < end; index++) {
+          if (lines[index].trim() === marker) return index;
+        }
+        return -1;
+      };
+      const insertAtCategoryEnd = (categoryLine: number, end: number, newLine: string) => {
+        let boundary = end;
+        for (let index = categoryLine + 1; index < end; index++) {
+          if (/^\s{4}#\s+/.test(lines[index])) {
+            boundary = index;
+            break;
+          }
+        }
+        let insertAt = boundary;
+        while (insertAt > categoryLine + 1 && lines[insertAt - 1].trim() === '') insertAt--;
+        lines.splice(insertAt, 0, newLine);
+      };
+      if (action === 'addCategory') {
+        const category = requiredString(data.category, '效果类别');
+        if (/[\r\n#]/.test(category)) throw new Error('效果类别不能包含换行或 #');
+        if (findCategory(category, classStart, descriptionsMarker) >= 0) {
+          throw new Error(`效果类别“${category}”已存在`);
+        }
+        let enumInsert = descriptionsMarker;
+        while (enumInsert > classStart + 1 && lines[enumInsert - 1].trim() === '') enumInsert--;
+        lines.splice(enumInsert, 0, '', `    # ${category}`);
+        const shiftedTermsStart = lines.findIndex((line, index) => index > descriptionsStart && line.trim().startsWith('# 效果术语映射'));
+        let mapEnd = -1;
+        for (let index = shiftedTermsStart - 1; index > descriptionsStart; index--) {
+          if (lines[index].trim() === '}') {
+            mapEnd = index;
+            break;
+          }
+        }
+        if (mapEnd < 0) throw new Error('无法定位 EFFECT_DESCRIPTIONS 结束大括号');
+        let mapInsert = mapEnd;
+        while (mapInsert > descriptionsStart + 1 && lines[mapInsert - 1].trim() === '') mapInsert--;
+        lines.splice(mapInsert, 0, '', `    # ${category}`);
+      } else if (action === 'addEffect') {
+        const effectId = requiredString(data.effectId, '效果 ID').toUpperCase();
+        const description = requiredString(data.description, '效果描述');
+        const category = requiredString(data.category, '效果类别');
+        if (!/^[A-Z][A-Z0-9_]*$/.test(effectId)) throw new Error('效果 ID 只能包含大写字母、数字和下划线');
+        if (new RegExp(`^\\s*${effectId}\\s*=`, 'm').test(text)) throw new Error(`效果 ${effectId} 已存在`);
+        const enumCategory = findCategory(category, classStart, descriptionsMarker);
+        if (enumCategory < 0) throw new Error(`效果类别“${category}”不存在，请先添加类别`);
+        insertAtCategoryEnd(enumCategory, descriptionsMarker, `    ${effectId} = "${effectId}"`);
+        const currentDescriptionsStart = lines.findIndex((line) => line.trim().startsWith('EFFECT_DESCRIPTIONS'));
+        const currentTermsStart = lines.findIndex((line, index) => index > currentDescriptionsStart && line.trim().startsWith('# 效果术语映射'));
+        let currentMapEnd = -1;
+        for (let index = currentTermsStart - 1; index > currentDescriptionsStart; index--) {
+          if (lines[index].trim() === '}') {
+            currentMapEnd = index;
+            break;
+          }
+        }
+        if (currentMapEnd < 0) throw new Error('无法定位 EFFECT_DESCRIPTIONS 结束大括号');
+        const mapCategory = findCategory(category, currentDescriptionsStart, currentMapEnd);
+        if (mapCategory < 0) throw new Error(`无法定位“${category}”的描述映射分组`);
+        const escapedDescription = JSON.stringify(description);
+        insertAtCategoryEnd(mapCategory, currentMapEnd, `    EffectType.${effectId}: ${escapedDescription},`);
+      } else {
+        throw new Error(`不支持的效果操作：${action}`);
+      }
+      text = lines.join(eol);
+      this.atomicWriteText(file, text);
+      await this.panel.webview.postMessage({ type: 'mutationResult', ok: true, action });
+      await this.update(false);
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      await this.panel.webview.postMessage({ type: 'mutationResult', ok: false, text });
+      void vscode.window.showErrorMessage(`效果数据保存失败：${text}`);
     }
   }
 
