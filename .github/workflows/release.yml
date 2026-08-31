@@ -6,24 +6,21 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
+  validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      VSCE_PAT: ${{ secrets.VSCE_PAT }}
-      JETBRAINS_PUBLISH_TOKEN: ${{ secrets.JETBRAINS_PUBLISH_TOKEN }}
-      PRIVATE_KEY: ${{ secrets.JETBRAINS_PRIVATE_KEY }}
-      PRIVATE_KEY_PASSWORD: ${{ secrets.JETBRAINS_PRIVATE_KEY_PASSWORD }}
-      CERTIFICATE_CHAIN: ${{ secrets.JETBRAINS_CERTIFICATE_CHAIN }}
-      VSCE_USE_OIDC: ${{ vars.VSCE_USE_OIDC }}
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      vsix: ${{ steps.version.outputs.vsix }}
+      jetbrains_zip: ${{ steps.version.outputs.jetbrains_zip }}
 
     steps:
       - name: Check out tagged source and submodule
@@ -39,6 +36,59 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Verify synchronized release version
+        id: version
+        run: npm run --silent verify:version
+
+  build-vscode:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out tagged source and submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test and package VS Code extension
+        run: |
+          npm test
+          npm run package
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.validate.outputs.vsix }}
+          path: ${{ needs.validate.outputs.vsix }}
+          if-no-files-found: error
+
+  build-jetbrains:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      PRIVATE_KEY: ${{ secrets.JETBRAINS_PRIVATE_KEY }}
+      PRIVATE_KEY_PASSWORD: ${{ secrets.JETBRAINS_PRIVATE_KEY_PASSWORD }}
+      CERTIFICATE_CHAIN: ${{ secrets.JETBRAINS_CERTIFICATE_CHAIN }}
+    outputs:
+      signed: ${{ steps.jetbrains_sign.outputs.signed }}
+
+    steps:
+      - name: Check out tagged source and submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -47,18 +97,6 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-
-      - name: Install VS Code dependencies
-        run: npm ci
-
-      - name: Verify synchronized release version
-        id: version
-        run: npm run --silent verify:version
-
-      - name: Test and package VS Code extension
-        run: |
-          npm test
-          npm run package
 
       - name: Test and package JetBrains plugin
         working-directory: jetbrains
@@ -76,18 +114,56 @@ jobs:
               echo "Signed JetBrains artifact was not generated." >&2
               exit 1
             fi
-            artifact="build/release/${{ steps.version.outputs.jetbrains_zip }}"
+            artifact="build/release/${{ needs.validate.outputs.jetbrains_zip }}"
             mkdir -p "$(dirname "$artifact")"
             cp "$signed" "$artifact"
             echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
             echo "signed=true" >> "$GITHUB_OUTPUT"
           else
-            artifact="build/distributions/${{ steps.version.outputs.jetbrains_zip }}"
+            artifact="build/distributions/${{ needs.validate.outputs.jetbrains_zip }}"
             test -f "$artifact"
             echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
             echo "signed=false" >> "$GITHUB_OUTPUT"
             echo "::notice::JetBrains signing secrets are incomplete; the unsigned ZIP will only be attached to GitHub Release."
           fi
+
+      - name: Upload JetBrains artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.validate.outputs.jetbrains_zip }}
+          path: jetbrains/${{ steps.jetbrains_sign.outputs.artifact }}
+          if-no-files-found: error
+
+  publish-vscode:
+    needs:
+      - validate
+      - build-vscode
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      VSCE_USE_OIDC: ${{ vars.VSCE_USE_OIDC }}
+
+    steps:
+      - name: Check out package metadata
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.validate.outputs.vsix }}
 
       - name: Publish to Visual Studio Marketplace
         run: |
@@ -97,7 +173,7 @@ jobs:
           elif [ "${VSCE_USE_OIDC:-}" = "true" ]; then
             echo "VSCE_PAT is not configured; using Visual Studio Marketplace trusted publishing (OIDC)."
             output=$(mktemp)
-            if ! npx @vscode/vsce publish --oidc --packagePath "${{ steps.version.outputs.vsix }}" 2>&1 | tee "$output"; then
+            if ! npx @vscode/vsce publish --oidc --packagePath "${{ needs.validate.outputs.vsix }}" 2>&1 | tee "$output"; then
               if grep -Eqi 'already exists|version .* exists|duplicate' "$output"; then
                 echo "Visual Studio Marketplace already contains this version; skipping duplicate upload."
               else
@@ -108,6 +184,21 @@ jobs:
             echo "::notice::Neither VSCE_PAT nor VSCE_USE_OIDC=true is configured; Visual Studio Marketplace publishing was skipped."
           fi
 
+  publish-jetbrains:
+    needs:
+      - validate
+      - build-jetbrains
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      JETBRAINS_PUBLISH_TOKEN: ${{ secrets.JETBRAINS_PUBLISH_TOKEN }}
+
+    steps:
+      - name: Download JetBrains artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.validate.outputs.jetbrains_zip }}
+
       - name: Publish to JetBrains Marketplace
         run: |
           set -euo pipefail
@@ -115,11 +206,11 @@ jobs:
             echo "::notice::JETBRAINS_PUBLISH_TOKEN is not configured; JetBrains Marketplace publishing was skipped."
             exit 0
           fi
-          if [ "${{ steps.jetbrains_sign.outputs.signed }}" != "true" ]; then
+          if [ "${{ needs.build-jetbrains.outputs.signed }}" != "true" ]; then
             echo "JetBrains Marketplace publishing requires all signing secrets." >&2
             exit 1
           fi
-          version="${{ steps.version.outputs.version }}"
+          version="${{ needs.validate.outputs.version }}"
           if curl --silent --show-error --fail --location --range 0-0 \
             "https://plugins.jetbrains.com/plugin/download?pluginId=com.alicejump.oklanghints&version=$version" \
             --output /dev/null; then
@@ -129,15 +220,38 @@ jobs:
           curl --fail-with-body \
             --header "Authorization: Bearer $JETBRAINS_PUBLISH_TOKEN" \
             -F "xmlId=com.alicejump.oklanghints" \
-            -F "file=@jetbrains/${{ steps.jetbrains_sign.outputs.artifact }}" \
+            -F "file=@${{ needs.validate.outputs.jetbrains_zip }}" \
             https://plugins.jetbrains.com/api/updates/upload
+
+  github-release:
+    needs:
+      - validate
+      - build-vscode
+      - build-jetbrains
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.validate.outputs.vsix }}
+          path: release
+
+      - name: Download JetBrains artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.validate.outputs.jetbrains_zip }}
+          path: release
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-          VSIX: ${{ steps.version.outputs.vsix }}
-          JETBRAINS_ARTIFACT: jetbrains/${{ steps.jetbrains_sign.outputs.artifact }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          VSIX: release/${{ needs.validate.outputs.vsix }}
+          JETBRAINS_ARTIFACT: release/${{ needs.validate.outputs.jetbrains_zip }}
         run: |
           set -euo pipefail
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -145,7 +259,7 @@ jobs:
             exit 0
           fi
           gh release create "$TAG" \
-            "$VSIX#$VSIX" \
+            "$VSIX#$(basename "$VSIX")" \
             "$JETBRAINS_ARTIFACT#$(basename "$JETBRAINS_ARTIFACT")" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \

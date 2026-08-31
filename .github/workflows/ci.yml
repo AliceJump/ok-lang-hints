@@ -15,9 +15,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-and-package:
+  vscode:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
 
     steps:
       - name: Check out source
@@ -51,6 +51,25 @@ jobs:
           path: ${{ steps.version.outputs.vsix }}
           if-no-files-found: error
           retention-days: 14
+
+  jetbrains:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Resolve package metadata
+        id: version
+        run: npm run --silent verify:version
 
       - name: Set up Java
         uses: actions/setup-java@v4
