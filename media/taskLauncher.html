@@ -69,6 +69,11 @@
   }
   .cfg-panel.open { display: block; }
   .cfg-field { margin-bottom: 8px; }
+  .cfg-field.cfg-subconfig {
+    margin-left: 12px;
+    padding-left: 9px;
+    border-left: 2px solid var(--vscode-panel-border, rgba(128,128,128,.22));
+  }
   .cfg-field label {
     display: block;
     font-size: 12px;
@@ -345,44 +350,53 @@
     return row;
   }
 
-  function choiceKeys(value) {
-    const values = Array.isArray(value) ? value : [value];
-    const keys = [];
-    for (const item of values) {
-      const raw = String(item);
-      keys.push(raw, raw.toLowerCase(), raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase());
-    }
-    return keys;
-  }
-
-  function activeSubConfigKeys(typeMeta, value) {
-    const rules = typeMeta && typeof typeMeta.sub_configs === 'object' ? typeMeta.sub_configs : null;
-    if (!rules) return [];
-    const active = [];
-    for (const choice of choiceKeys(value)) {
-      const controlled = rules[choice];
-      const keys = typeof controlled === 'string' ? [controlled] : (Array.isArray(controlled) ? controlled : []);
-      for (const key of keys) if (!active.includes(key)) active.push(key);
-    }
-    return active;
-  }
-
   function fieldValue(field, config) {
     return config.params && field.key in config.params
       ? config.params[field.key]
       : (field.value !== undefined ? field.value : field.default);
   }
 
-  function allSubConfigKeys(typeMeta) {
+  function subConfigRules(typeMeta) {
     const rules = typeMeta && typeof typeMeta.sub_configs === 'object' ? typeMeta.sub_configs : null;
-    if (!rules) return [];
-    const keys = [];
-    for (const controlled of Object.values(rules)) {
-      for (const key of (typeof controlled === 'string' ? [controlled] : (Array.isArray(controlled) ? controlled : []))) {
-        if (!keys.includes(key)) keys.push(key);
+    return rules && !Array.isArray(rules) ? rules : null;
+  }
+
+  function normalizeSubConfigKeys(value) {
+    if (typeof value === 'string') return [value];
+    return Array.isArray(value) ? value.filter((key) => typeof key === 'string') : [];
+  }
+
+  function booleanSubConfigRules(field, config) {
+    if (!field || (typeof field.default !== 'boolean' && typeof field.value !== 'boolean')) return null;
+    const rules = subConfigRules(field.type);
+    if (!rules) return null;
+    const result = {};
+    for (const [choice, controlled] of Object.entries(rules)) {
+      const normalized = String(choice).toLowerCase();
+      if (normalized === 'true' || normalized === 'false') {
+        result[normalized] = normalizeSubConfigKeys(controlled);
       }
     }
-    return keys;
+    return Object.keys(result).length ? result : null;
+  }
+
+  function booleanFieldValue(field, config) {
+    const value = fieldValue(field, config);
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') return value.trim().toLowerCase() === 'true';
+    return Boolean(value);
+  }
+
+  function optionSubConfigGroups(field, config) {
+    if (!field || booleanSubConfigRules(field, config)) return [];
+    const rules = subConfigRules(field.type);
+    if (!rules) return [];
+    const labels = field.type?.sub_config_labels || {};
+    return Object.entries(rules).map(([choice, controlled]) => ({
+      key: String(choice),
+      label: String(labels[choice] || choice),
+      children: normalizeSubConfigKeys(controlled),
+    }));
   }
 
   function buildRuntimeFields(panel, config) {
@@ -449,69 +463,79 @@
       const rebuildFields = () => {
         fieldsHost.replaceChildren();
         const rowByKey = {};
-        const groupByKey = {};
         const renderedKeys = new Set();
-        let applyVisibility = () => {};
+        const renderedGroupKeys = new Set();
+        const inlineRulesByParent = {};
 
-        const ordinaryChildren = (field) => field && field.key !== selectorKey
-          ? allSubConfigKeys(field.type)
-          : [];
+        for (const field of schema.fields) {
+          const rules = booleanSubConfigRules(field, config);
+          if (rules) inlineRulesByParent[field.key] = rules;
+        }
 
-        const countNodeFields = (key, checking = new Set()) => {
-          if (checking.has(key)) return 0;
-          const next = new Set(checking); next.add(key);
-          const children = [...(groups[key] || []), ...ordinaryChildren(fieldByKey[key])];
-          const keys = new Set(fieldByKey[key] ? [key] : []);
-          for (const child of children) {
-            if (child === key) continue;
-            if (groups[child] || ordinaryChildren(fieldByKey[child]).length) {
-              if (countNodeFields(child, next)) keys.add(child);
-            } else if (fieldByKey[child]) keys.add(child);
+        const applyInlineVisibility = () => {
+          const parentsByChild = {};
+          for (const [parentKey, rules] of Object.entries(inlineRulesByParent)) {
+            for (const controlled of Object.values(rules)) {
+              for (const child of controlled) {
+                (parentsByChild[child] = parentsByChild[child] || []).push(parentKey);
+              }
+            }
           }
-          return keys.size;
+          const visible = (key, checking = new Set()) => {
+            if (checking.has(key)) return false;
+            const parents = parentsByChild[key] || [];
+            if (!parents.length) return true;
+            const next = new Set(checking); next.add(key);
+            return parents.every((parentKey) => {
+              const parent = fieldByKey[parentKey];
+              if (!parent || !visible(parentKey, next)) return false;
+              const choice = String(booleanFieldValue(parent, config));
+              return (inlineRulesByParent[parentKey]?.[choice] || []).includes(key);
+            });
+          };
+          for (const [key, rows] of Object.entries(rowByKey)) {
+            for (const row of rows) row.style.display = visible(key) ? '' : 'none';
+          }
         };
 
-        const renderField = (key, container, onChange = () => applyVisibility()) => {
-          if (renderedKeys.has(key) || !fieldByKey[key]) return false;
-          renderedKeys.add(key);
-          rowByKey[key] = buildField(container, task, fieldByKey[key], config, onChange);
+        const renderField = (key, container, onChange = applyInlineVisibility, subConfig = false, duplicate = false) => {
+          if ((!duplicate && renderedKeys.has(key)) || !fieldByKey[key]) return false;
+          if (!duplicate) renderedKeys.add(key);
+          const row = buildField(container, task, fieldByKey[key], config, onChange);
+          row.classList.toggle('cfg-subconfig', subConfig);
+          (rowByKey[key] = rowByKey[key] || []).push(row);
           return true;
         };
 
-        const renderNode = (key, container, path, checking = new Set()) => {
-          if (checking.has(key)) return false;
-          const field = fieldByKey[key];
-          const declaredChildren = Array.isArray(groups[key]) ? groups[key] : [];
-          const conditionalChildren = ordinaryChildren(field);
-          const children = [...new Set([...declaredChildren, ...conditionalChildren])]
-            .filter((child) => child !== key);
-          if (!children.length) return renderField(key, container);
+        let renderFieldTree;
+
+        const renderCollapseGroup = (groupKey, label, children, container, path, options = {}) => {
+          if (renderedGroupKeys.has(groupKey)) return false;
+          renderedGroupKeys.add(groupKey);
+          const headerField = options.headerField && fieldByKey[options.headerField]
+            ? options.headerField
+            : '';
+          const groupChildren = [...new Set(children)].filter((key) => key && key !== headerField);
 
           const group = document.createElement('div');
           group.className = 'cfg-group';
           const header = document.createElement('div');
           header.className = 'cfg-group-header';
-          if (field) {
-            renderField(key, header);
+          if (headerField) {
+            renderField(headerField, header, applyInlineVisibility, false, true);
           } else {
             const title = document.createElement('div');
             title.className = 'cfg-group-title';
-            title.textContent = (schema.groupLabels && schema.groupLabels[key]) || key;
+            title.textContent = label;
             header.appendChild(title);
           }
-          const count = document.createElement('span');
-          count.className = 'cfg-group-count';
-          count.textContent = String(Math.max(0, countNodeFields(key) - (field ? 1 : 0)));
-          const titleTarget = header.querySelector('.cfg-group-title') || header.querySelector('label');
-          if (titleTarget) titleTarget.appendChild(count);
 
           const toggle = document.createElement('button');
           toggle.className = 'cfg-group-toggle secondary';
           const body = document.createElement('div');
           body.className = 'cfg-group-body';
           const stateKey = taskKey(task) + '::' + path.join('>');
-          const defaultOpen = field ? Boolean(fieldValue(field, config)) : false;
-          const isOpen = openConfigGroups.has(stateKey) ? openConfigGroups.get(stateKey) : defaultOpen;
+          const isOpen = openConfigGroups.has(stateKey) ? openConfigGroups.get(stateKey) : false;
           const setOpen = (open) => {
             group.classList.toggle('open', open);
             toggle.textContent = open ? '▲' : '▼';
@@ -523,100 +547,128 @@
           group.appendChild(header);
           group.appendChild(body);
           container.appendChild(group);
-          groupByKey[key] = group;
 
-          const next = new Set(checking); next.add(key);
-          for (const child of children) renderNode(child, body, [...path, child], next);
+          if (headerField && inlineRulesByParent[headerField]) {
+            const next = new Set(options.checking || []); next.add(headerField);
+            for (const child of [...new Set(Object.values(inlineRulesByParent[headerField]).flat())]) {
+              renderFieldTree(child, body, [...path, child], true, next);
+            }
+          }
+
+          for (const child of groupChildren) {
+            if (groups[child]) {
+              renderCollapseGroup(
+                child,
+                (schema.groupLabels && schema.groupLabels[child]) || child,
+                groups[child],
+                body,
+                [...path, child],
+                {
+                  headerField: fieldByKey[child] ? child : '',
+                  checking: options.checking,
+                  duplicateChildren: options.duplicateChildren,
+                },
+              );
+            } else {
+              renderFieldTree(child, body, [...path, child], options.inlineChildren === true, options.checking || new Set(), options.duplicateChildren === true);
+            }
+          }
           if (!body.childElementCount) {
             toggle.style.display = 'none';
+            group.classList.add('open');
           } else {
             setOpen(Boolean(isOpen));
+          }
+          return group;
+        };
+
+        renderFieldTree = (key, container, path, subConfig = false, checking = new Set(), duplicate = false) => {
+          if (checking.has(key) || !fieldByKey[key]) return false;
+          const next = new Set(checking); next.add(key);
+          const rendered = renderField(key, container, applyInlineVisibility, subConfig, duplicate);
+          if (!rendered) return false;
+
+          const inlineRules = inlineRulesByParent[key];
+          if (inlineRules) {
+            for (const child of [...new Set(Object.values(inlineRules).flat())]) {
+              renderFieldTree(child, container, [...path, child], true, next, duplicate);
+            }
+          }
+          for (const group of optionSubConfigGroups(fieldByKey[key], config)) {
+            renderCollapseGroup(
+              `${key}:${group.key}`,
+              group.label,
+              group.children,
+              container,
+              [...path, 'sub-config', group.key],
+              { checking: new Set(), duplicateChildren: true },
+            );
           }
           return true;
         };
 
-        const groupReferenced = new Set(Object.keys(groups));
-        for (const children of Object.values(groups)) {
-          if (Array.isArray(children)) for (const key of children) groupReferenced.add(key);
-        }
-        const conditionControlled = new Set();
+        const optionControlled = new Set();
         for (const field of schema.fields) {
-          if (field.key === selectorKey) continue;
-          for (const key of allSubConfigKeys(field.type)) conditionControlled.add(key);
-        }
-
-        if (selectorKey) {
-          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = t('configGroup'); fieldsHost.appendChild(title);
-          renderField(selectorKey, fieldsHost, rebuildFields);
-        }
-
-        const commonRoots = schema.fields.filter((field) =>
-          field.key !== selectorKey &&
-          !groupReferenced.has(field.key) &&
-          !conditionControlled.has(field.key)
-        );
-        if (commonRoots.length) {
-          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = t('commonParameters'); fieldsHost.appendChild(title);
-          for (const field of commonRoots) renderNode(field.key, fieldsHost, ['common', field.key]);
-        }
-
-        if (selectorKey) {
-          const selected = String(fieldValue(fieldByKey[selectorKey], config) ?? '');
-          const selectorLabels = fieldByKey[selectorKey]?.type?.sub_config_labels || {};
-          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = (schema.groupLabels && schema.groupLabels[selected]) || selectorLabels[selected] || selected || t('groupParameters'); fieldsHost.appendChild(title);
-          for (const child of (groups[selected] || [])) renderNode(child, fieldsHost, [selected, child]);
-        } else if (Object.keys(groups).length) {
-          const referencedGroups = new Set();
-          for (const children of Object.values(groups)) {
-            if (Array.isArray(children)) for (const child of children) if (groups[child]) referencedGroups.add(child);
+          for (const group of optionSubConfigGroups(field, config)) {
+            for (const key of group.children) optionControlled.add(key);
           }
-          const roots = Object.keys(groups).filter((key) => !referencedGroups.has(key));
-          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = t('childTaskConfig'); fieldsHost.appendChild(title);
-          for (const root of roots) renderNode(root, fieldsHost, [root]);
+        }
+        const inlineControlled = new Set();
+        for (const rules of Object.values(inlineRulesByParent)) {
+          for (const keys of Object.values(rules)) for (const key of keys) inlineControlled.add(key);
+        }
+        const declaredGroupChildren = new Set();
+        const declaredGroupNames = new Set(Object.keys(groups));
+        for (const children of Object.values(groups)) {
+          if (Array.isArray(children)) for (const key of children) declaredGroupChildren.add(key);
         }
 
-        const remaining = schema.fields.filter((field) =>
-          field.key !== selectorKey &&
-          !renderedKeys.has(field.key) &&
-          !groupReferenced.has(field.key) &&
-          !conditionControlled.has(field.key)
-        );
-        if (remaining.length) {
-          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = t('otherParameters'); fieldsHost.appendChild(title);
-          for (const field of remaining) renderNode(field.key, fieldsHost, ['other', field.key]);
+        for (const field of schema.fields) {
+          if (field.key === selectorKey || optionControlled.has(field.key) || inlineControlled.has(field.key) || declaredGroupNames.has(field.key) || declaredGroupChildren.has(field.key)) continue;
+          renderFieldTree(field.key, fieldsHost, ['field', field.key]);
         }
 
-        applyVisibility = () => {
-          const parentsByChild = {};
-          for (const parent of schema.fields) {
-            if (parent.key === selectorKey) continue;
-            for (const key of allSubConfigKeys(parent.type)) {
-              (parentsByChild[key] = parentsByChild[key] || []).push(parent);
-            }
+        const nestedGroupNames = new Set();
+        for (const [parent, children] of Object.entries(groups)) {
+          if (!Array.isArray(children)) continue;
+          for (const child of children) {
+            if (child !== parent && groups[child]) nestedGroupNames.add(child);
           }
-          const visible = (key, checking) => {
-            if (checking.has(key)) return false;
-            const parents = parentsByChild[key] || [];
-            if (!parents.length) return true;
-            const next = new Set(checking); next.add(key);
-            return parents.every((parent) =>
-              visible(parent.key, next) && activeSubConfigKeys(parent.type, fieldValue(parent, config)).includes(key)
-            );
-          };
-          for (const [key, row] of Object.entries(rowByKey)) {
-            const isVisible = visible(key, new Set());
-            row.style.display = isVisible ? '' : 'none';
-            if (groupByKey[key]) groupByKey[key].style.display = isVisible ? '' : 'none';
-          }
-          // 标题型分组没有自己的字段；仅当至少一个直接子节点可见时显示。
-          for (const [key, group] of Object.entries(groupByKey).reverse()) {
-            if (fieldByKey[key]) continue;
-            const body = group.querySelector('.cfg-group-body');
-            const hasVisibleChild = body && Array.from(body.children).some((child) => child.style.display !== 'none');
-            group.style.display = hasVisibleChild ? '' : 'none';
-          }
-        };
-        applyVisibility();
+        }
+        const rootGroupNames = Object.keys(groups).filter((key) => !nestedGroupNames.has(key));
+        for (const groupKey of rootGroupNames) {
+          renderCollapseGroup(
+            groupKey,
+            (schema.groupLabels && schema.groupLabels[groupKey]) || groupKey,
+            groups[groupKey] || [],
+            fieldsHost,
+            ['config-group', groupKey],
+            {
+              headerField: fieldByKey[groupKey] ? groupKey : '',
+              duplicateChildren: true,
+            },
+          );
+        }
+        for (const groupKey of Object.keys(groups)) {
+          if (renderedGroupKeys.has(groupKey)) continue;
+          renderCollapseGroup(
+            groupKey,
+            (schema.groupLabels && schema.groupLabels[groupKey]) || groupKey,
+            groups[groupKey] || [],
+            fieldsHost,
+            ['config-group', groupKey],
+            {
+              headerField: fieldByKey[groupKey] ? groupKey : '',
+              duplicateChildren: true,
+            },
+          );
+        }
+
+        for (const field of schema.fields) {
+          if (field.key === selectorKey || renderedKeys.has(field.key) || optionControlled.has(field.key) || declaredGroupNames.has(field.key) || declaredGroupChildren.has(field.key)) continue;
+          renderFieldTree(field.key, fieldsHost, ['remaining', field.key], inlineControlled.has(field.key));
+        }
+        applyInlineVisibility();
       };
 
       rebuildFields();
