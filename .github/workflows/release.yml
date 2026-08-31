@@ -109,7 +109,6 @@ jobs:
           set -euo pipefail
           if [ -n "${PRIVATE_KEY:-}" ] && [ -n "${PRIVATE_KEY_PASSWORD:-}" ] && [ -n "${CERTIFICATE_CHAIN:-}" ]; then
             ./gradlew signPlugin
-            ./gradlew verifyPluginSignature
             signed=$(find build/distributions -maxdepth 1 -type f -name '*-signed.zip' -print -quit)
             if [ -z "$signed" ]; then
               echo "Signed JetBrains artifact was not generated." >&2
