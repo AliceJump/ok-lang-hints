@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-cn">
+<html>
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-__CSP_NONCE__'">
-<title>ok-script 任务启动</title>
+<title></title>
 <style>
   body {
     color: var(--vscode-editor-foreground);
@@ -138,12 +138,14 @@
 </head>
 <body>
   <div class="toolbar">
-    <button id="refresh" class="secondary">↻ 刷新</button>
+    <button id="refresh" class="secondary"></button>
   </div>
   <div id="tasks"></div>
   <div id="status" class="status" style="display:none"></div>
-  <div id="empty" class="empty" style="display:none">未找到任务。<br>请先在设置中配置项目路径。</div>
+  <div id="empty" class="empty" style="display:none;white-space:pre-line"></div>
 <script nonce="__CSP_NONCE__">
+  const I18N = __I18N_JSON__;
+  const t = (key, args = {}) => (I18N[key] || key).replace(/\{(\w+)\}/g, (_, name) => String(args[name] ?? '{' + name + '}'));
   const vscode = acquireVsCodeApi();
   const tasksEl = document.getElementById('tasks');
   const statusEl = document.getElementById('status');
@@ -157,6 +159,9 @@
   let runningTaskKey = '';
   const openPanels = new Set();
   const openConfigGroups = new Map();
+  document.title = t('taskTitle');
+  refreshBtn.textContent = '↻ ' + t('refresh');
+  emptyEl.textContent = t('noTasks');
 
   function setStatus(level, text) {
     if (!text) { statusEl.style.display = 'none'; return; }
@@ -165,20 +170,20 @@
     statusEl.textContent = text;
   }
 
-  function taskKey(t) { return t.module + '::' + t.className; }
+  function taskKey(task) { return task.module + '::' + task.className; }
 
   /** 渲染单个参数字段控件；值变更时实时写回 config.params */
-  function buildField(container, t, field, config, onChange) {
+  function buildField(container, task, field, config, onChange) {
     const row = document.createElement('div');
     row.className = 'cfg-field';
     const label = document.createElement('label');
-    label.textContent = field.key;
+    label.textContent = field.displayKey || field.key;
     label.title = field.key;
     row.appendChild(label);
-    if (field.desc) {
+    if (field.displayDesc || field.desc) {
       const d = document.createElement('div');
       d.className = 'cfg-desc';
-      d.textContent = field.desc;
+      d.textContent = field.displayDesc || field.desc;
       row.appendChild(d);
     }
     const setValue = (v) => {
@@ -193,6 +198,7 @@
     const typeName = String(typeMeta.type || '');
     const options = Array.isArray(typeMeta.options) ? typeMeta.options : [];
     const optionsAvailable = Array.isArray(typeMeta.options_available) ? typeMeta.options_available : [];
+    const optionLabels = Array.isArray(typeMeta.option_labels) ? typeMeta.option_labels : [];
 
     // 1) cascade_drop_down：按分类分组选项
     if (typeName === 'cascade_drop_down' && typeMeta.options && typeof typeMeta.options === 'object') {
@@ -201,19 +207,20 @@
       for (const [category, values] of Object.entries(typeMeta.options)) {
         if (!Array.isArray(values)) continue;
         const group = document.createElement('optgroup');
-        group.label = String((typeMeta.labels && typeMeta.labels[category]) || category);
-        for (const value of values) {
+        group.label = String((typeMeta.category_labels && typeMeta.category_labels[category]) || (typeMeta.labels && typeMeta.labels[category]) || category);
+        for (let valueIndex = 0; valueIndex < values.length; valueIndex++) {
+          const value = values[valueIndex];
           const option = document.createElement('option');
           option.value = JSON.stringify(value);
-          option.textContent = String(value);
+          option.textContent = String((typeMeta.option_labels && typeMeta.option_labels[category] && typeMeta.option_labels[category][valueIndex]) || value);
           if (String(value) === String(rawValue)) { option.selected = true; selected = true; }
           group.appendChild(option);
         }
         sel.appendChild(group);
       }
       if (!selected && rawValue !== undefined && rawValue !== null) {
-        const group = document.createElement('optgroup'); group.label = '当前值';
-        const option = document.createElement('option'); option.value = JSON.stringify(rawValue); option.textContent = String(rawValue); option.selected = true;
+        const group = document.createElement('optgroup'); group.label = t('current');
+        const option = document.createElement('option'); option.value = JSON.stringify(rawValue); option.textContent = t('currentValue', { value: rawValue }); option.selected = true;
         group.appendChild(option); sel.insertBefore(group, sel.firstChild);
       }
       sel.addEventListener('change', () => { try { setValue(JSON.parse(sel.value)); } catch {} });
@@ -227,13 +234,13 @@
         const op = options[index];
         const o = document.createElement('option');
         o.value = String(index);
-        o.textContent = String(op);
+        o.textContent = String(optionLabels[index] || op);
         if (String(op) === cur) { o.selected = true; hasCur = true; }
         sel.appendChild(o);
       }
       if (!hasCur) {
         const o = document.createElement('option');
-        o.value = '-1'; o.textContent = cur + '（当前）'; o.selected = true;
+        o.value = '-1'; o.textContent = t('currentValue', { value: cur }); o.selected = true;
         sel.appendChild(o);
       }
       sel.addEventListener('change', () => {
@@ -249,8 +256,8 @@
       cb.type = 'checkbox';
       cb.checked = !!rawValue;
       const t2 = document.createElement('span');
-      t2.textContent = rawValue ? '开启' : '关闭';
-      const sync = () => { t2.textContent = cb.checked ? '开启' : '关闭'; setValue(cb.checked); };
+      t2.textContent = rawValue ? t('enabled') : t('disabled');
+      const sync = () => { t2.textContent = cb.checked ? t('enabled') : t('disabled'); setValue(cb.checked); };
       cb.addEventListener('change', sync);
       wrap.appendChild(cb); wrap.appendChild(t2);
       row.appendChild(wrap);
@@ -279,13 +286,13 @@
         const op = options[index];
         const o = document.createElement('option');
         o.value = String(index);
-        o.textContent = String(op);
+        o.textContent = String(optionLabels[index] || op);
         if (curArr.includes(String(op))) o.selected = true;
         sel.appendChild(o);
       }
       const hint = document.createElement('div');
       hint.className = 'cfg-desc';
-      hint.textContent = '按住 Ctrl 多选';
+      hint.textContent = t('holdCtrlMulti');
       sel.addEventListener('change', () => {
         setValue(Array.from(sel.selectedOptions).map((o) => options[Number(o.value)]));
       });
@@ -295,7 +302,7 @@
       // 6) 结构化列表：JSON 编辑，保留条件序列对象结构
       const inp = document.createElement('textarea');
       inp.value = JSON.stringify(Array.isArray(rawValue) ? rawValue : [], null, 2);
-      const hint = document.createElement('div'); hint.className = 'cfg-json-hint'; hint.textContent = 'JSON 数组；支持条件对象与动作序列。';
+      const hint = document.createElement('div'); hint.className = 'cfg-json-hint'; hint.textContent = t('structuredJsonHint');
       inp.addEventListener('change', () => {
         try {
           const parsed = JSON.parse(inp.value);
@@ -312,7 +319,8 @@
       const inp = document.createElement('textarea');
       inp.value = (Array.isArray(rawValue) ? rawValue : []).join('\n');
       if (optionsAvailable.length) {
-        inp.title = '可选值: ' + optionsAvailable.map(String).join(', ');
+        const availableLabels = Array.isArray(typeMeta.options_available_labels) ? typeMeta.options_available_labels : optionsAvailable;
+        inp.title = t('selectedOptionsHint', { values: availableLabels.map(String).join(', ') });
       }
       inp.addEventListener('change', () => {
         setValue(inp.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean));
@@ -380,7 +388,7 @@
   function buildRuntimeFields(panel, config) {
     const title = document.createElement('div');
     title.className = 'cfg-section-title';
-    title.textContent = '启动设置';
+    title.textContent = t('launchSettings');
     panel.appendChild(title);
 
     const addText = (labelText, desc, value, onChange, multiline) => {
@@ -395,10 +403,10 @@
       row.appendChild(input); panel.appendChild(row);
     };
 
-    addText('额外参数', '支持引号语法，或填写 JSON 字符串数组，例如 ["--headless", "--profile", "A B"]。', config.extraArgs || '', (value) => {
+    addText(t('extraArgs'), t('extraArgsHint'), config.extraArgs || '', (value) => {
       if (value.trim()) config.extraArgs = value.trim(); else delete config.extraArgs;
     }, false);
-    addText('环境变量', '每行 KEY=VALUE；仅传给当前任务子进程。', Object.entries(config.env || {}).map(([k, v]) => k + '=' + v).join('\n'), (value) => {
+    addText(t('environmentVariables'), t('environmentHint'), Object.entries(config.env || {}).map(([k, v]) => k + '=' + v).join('\n'), (value) => {
       const env = {};
       for (const line of value.split(/\r?\n/)) {
         const index = line.indexOf('=');
@@ -410,25 +418,25 @@
     }, true);
 
     const timeoutRow = document.createElement('div'); timeoutRow.className = 'cfg-field';
-    const timeoutLabel = document.createElement('label'); timeoutLabel.textContent = '自动停止超时（秒）'; timeoutRow.appendChild(timeoutLabel);
-    const timeoutDesc = document.createElement('div'); timeoutDesc.className = 'cfg-desc'; timeoutDesc.textContent = '0 表示不限时。'; timeoutRow.appendChild(timeoutDesc);
+    const timeoutLabel = document.createElement('label'); timeoutLabel.textContent = t('timeoutSeconds'); timeoutRow.appendChild(timeoutLabel);
+    const timeoutDesc = document.createElement('div'); timeoutDesc.className = 'cfg-desc'; timeoutDesc.textContent = t('timeoutHint'); timeoutRow.appendChild(timeoutDesc);
     const timeout = document.createElement('input'); timeout.type = 'number'; timeout.min = '0'; timeout.step = '1'; timeout.value = String(config.timeout || 0);
     timeout.addEventListener('change', () => { const value = Number(timeout.value); if (value > 0) config.timeout = value; else delete config.timeout; });
     timeoutRow.appendChild(timeout); panel.appendChild(timeoutRow);
   }
 
   /** 渲染某任务的参数配置面板 */
-  function buildConfigPanel(card, t, schema) {
+  function buildConfigPanel(card, task, schema) {
     const panel = document.createElement('div');
     panel.className = 'cfg-panel';
-    const savedConfig = taskConfigs[taskKey(t)] || {};
+    const savedConfig = taskConfigs[taskKey(task)] || {};
     const config = Object.assign({}, savedConfig, {
       params: Object.assign({}, savedConfig.params || {}),
     });
     if (schema && schema.broken) {
       const br = document.createElement('div');
       br.className = 'cfg-broken';
-      br.textContent = '⚠ 该任务 schema 采集失败，无法自动生成表单：' + (schema.error || '');
+      br.textContent = '⚠ ' + t('schemaFailed', { error: schema.error || '' });
       panel.appendChild(br);
     } else if (schema && schema.fields && schema.fields.length) {
       const fieldsHost = document.createElement('div');
@@ -466,7 +474,7 @@
         const renderField = (key, container, onChange = () => applyVisibility()) => {
           if (renderedKeys.has(key) || !fieldByKey[key]) return false;
           renderedKeys.add(key);
-          rowByKey[key] = buildField(container, t, fieldByKey[key], config, onChange);
+          rowByKey[key] = buildField(container, task, fieldByKey[key], config, onChange);
           return true;
         };
 
@@ -488,7 +496,7 @@
           } else {
             const title = document.createElement('div');
             title.className = 'cfg-group-title';
-            title.textContent = key;
+            title.textContent = (schema.groupLabels && schema.groupLabels[key]) || key;
             header.appendChild(title);
           }
           const count = document.createElement('span');
@@ -501,13 +509,13 @@
           toggle.className = 'cfg-group-toggle secondary';
           const body = document.createElement('div');
           body.className = 'cfg-group-body';
-          const stateKey = taskKey(t) + '::' + path.join('>');
+          const stateKey = taskKey(task) + '::' + path.join('>');
           const defaultOpen = field ? Boolean(fieldValue(field, config)) : false;
           const isOpen = openConfigGroups.has(stateKey) ? openConfigGroups.get(stateKey) : defaultOpen;
           const setOpen = (open) => {
             group.classList.toggle('open', open);
             toggle.textContent = open ? '▲' : '▼';
-            toggle.title = open ? '收起子任务配置' : '展开子任务配置';
+            toggle.title = open ? t('collapseParameters') : t('parameters');
             openConfigGroups.set(stateKey, open);
           };
           toggle.addEventListener('click', () => setOpen(!group.classList.contains('open')));
@@ -538,7 +546,7 @@
         }
 
         if (selectorKey) {
-          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = '配置分组'; fieldsHost.appendChild(title);
+          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = t('configGroup'); fieldsHost.appendChild(title);
           renderField(selectorKey, fieldsHost, rebuildFields);
         }
 
@@ -548,13 +556,14 @@
           !conditionControlled.has(field.key)
         );
         if (commonRoots.length) {
-          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = '通用参数'; fieldsHost.appendChild(title);
-          for (const field of commonRoots) renderNode(field.key, fieldsHost, ['通用参数', field.key]);
+          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = t('commonParameters'); fieldsHost.appendChild(title);
+          for (const field of commonRoots) renderNode(field.key, fieldsHost, ['common', field.key]);
         }
 
         if (selectorKey) {
           const selected = String(fieldValue(fieldByKey[selectorKey], config) ?? '');
-          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = selected || '分组参数'; fieldsHost.appendChild(title);
+          const selectorLabels = fieldByKey[selectorKey]?.type?.sub_config_labels || {};
+          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = (schema.groupLabels && schema.groupLabels[selected]) || selectorLabels[selected] || selected || t('groupParameters'); fieldsHost.appendChild(title);
           for (const child of (groups[selected] || [])) renderNode(child, fieldsHost, [selected, child]);
         } else if (Object.keys(groups).length) {
           const referencedGroups = new Set();
@@ -562,7 +571,7 @@
             if (Array.isArray(children)) for (const child of children) if (groups[child]) referencedGroups.add(child);
           }
           const roots = Object.keys(groups).filter((key) => !referencedGroups.has(key));
-          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = '子任务配置'; fieldsHost.appendChild(title);
+          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = t('childTaskConfig'); fieldsHost.appendChild(title);
           for (const root of roots) renderNode(root, fieldsHost, [root]);
         }
 
@@ -573,8 +582,8 @@
           !conditionControlled.has(field.key)
         );
         if (remaining.length) {
-          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = '其他参数'; fieldsHost.appendChild(title);
-          for (const field of remaining) renderNode(field.key, fieldsHost, ['其他参数', field.key]);
+          const title = document.createElement('div'); title.className = 'cfg-section-title'; title.textContent = t('otherParameters'); fieldsHost.appendChild(title);
+          for (const field of remaining) renderNode(field.key, fieldsHost, ['other', field.key]);
         }
 
         applyVisibility = () => {
@@ -615,30 +624,30 @@
       const actions = document.createElement('div');
       actions.className = 'cfg-actions';
       const save = document.createElement('button');
-      save.textContent = '💾 保存参数';
+      save.textContent = '💾 ' + t('saveParameters');
       save.addEventListener('click', () => {
-        vscode.postMessage({ type: 'saveConfig', task: t, config });
+        vscode.postMessage({ type: 'saveConfig', task, config });
       });
       const reset = document.createElement('button');
       reset.className = 'secondary';
-      reset.textContent = '↺ 重置';
+      reset.textContent = '↺ ' + t('reset');
       reset.addEventListener('click', () => {
-        const fresh = Object.assign({}, taskConfigs[taskKey(t)] || {});
+        const fresh = Object.assign({}, taskConfigs[taskKey(task)] || {});
         delete fresh.params;
-        vscode.postMessage({ type: 'saveConfig', task: t, config: fresh });
+        vscode.postMessage({ type: 'saveConfig', task, config: fresh });
       });
       actions.appendChild(save); actions.appendChild(reset);
       panel.appendChild(actions);
     } else {
       const e = document.createElement('div');
       e.className = 'cfg-empty';
-      e.textContent = '暂无可配置参数（schema 未就绪或该任务无 default_config）。';
+      e.textContent = t('noConfigParameters');
       panel.appendChild(e);
       buildRuntimeFields(panel, config);
       const actions = document.createElement('div');
       actions.className = 'cfg-actions';
-      const save = document.createElement('button'); save.textContent = '💾 保存启动设置';
-      save.addEventListener('click', () => vscode.postMessage({ type: 'saveConfig', task: t, config }));
+      const save = document.createElement('button'); save.textContent = '💾 ' + t('saveLaunchSettings');
+      save.addEventListener('click', () => vscode.postMessage({ type: 'saveConfig', task, config }));
       actions.appendChild(save); panel.appendChild(actions);
     }
     return panel;
@@ -648,56 +657,57 @@
     currentTasks = tasks;
     tasksEl.innerHTML = '';
     emptyEl.style.display = tasks.length ? 'none' : '';
-    for (const t of tasks) {
+    for (const task of tasks) {
       const card = document.createElement('div');
       card.className = 'task';
       const nm = document.createElement('div');
       nm.className = 'name';
-      const schema = schemas[taskKey(t)];
-      nm.textContent = schema && schema.displayName ? schema.displayName : t.displayName;
+      const schema = schemas[taskKey(task)];
+      const taskDisplayName = schema && schema.displayName ? schema.displayName : task.displayName;
+      nm.textContent = taskDisplayName;
       if (schema && schema.kind) {
-        const kind = document.createElement('span'); kind.className = 'kind'; kind.textContent = schema.kind === 'trigger' ? '触发任务' : '一次性'; nm.appendChild(kind);
+        const kind = document.createElement('span'); kind.className = 'kind'; kind.textContent = schema.kind === 'trigger' ? t('triggerTask') : t('oneTimeTask'); nm.appendChild(kind);
       }
-      nm.title = t.module;
+      nm.title = task.module;
       const cl = document.createElement('div');
       cl.className = 'cls';
-      cl.textContent = t.className;
+      cl.textContent = task.className;
       const desc = document.createElement('div');
       desc.className = 'description';
       desc.textContent = schema && schema.description ? schema.description : '';
       desc.style.display = desc.textContent ? '' : 'none';
       const launchBtn = document.createElement('button');
       launchBtn.className = 'launch-btn';
-      launchBtn.textContent = '▶ 启动';
-      launchBtn.dataset.module = t.module;
-      launchBtn.dataset.cls = t.className;
-      launchBtn.dataset.name = t.displayName;
+      launchBtn.textContent = '▶ ' + t('launch');
+      launchBtn.dataset.module = task.module;
+      launchBtn.dataset.cls = task.className;
+      launchBtn.dataset.name = taskDisplayName;
       launchBtn.addEventListener('click', () => {
         if (running) return;
-        vscode.postMessage({ type: 'launch', task: { module: t.module, className: t.className, displayName: t.displayName } });
+        vscode.postMessage({ type: 'launch', task: { module: task.module, className: task.className, displayName: taskDisplayName } });
       });
       const stopBtn = document.createElement('button');
       stopBtn.className = 'stop-btn';
-      stopBtn.textContent = '⏹ 停止';
-      stopBtn.dataset.module = t.module;
-      stopBtn.dataset.cls = t.className;
-      stopBtn.dataset.name = t.displayName;
+      stopBtn.textContent = '⏹ ' + t('stop');
+      stopBtn.dataset.module = task.module;
+      stopBtn.dataset.cls = task.className;
+      stopBtn.dataset.name = taskDisplayName;
       stopBtn.addEventListener('click', () => {
         if (!running) return;
-        vscode.postMessage({ type: 'stop', task: { module: t.module, className: t.className, displayName: t.displayName } });
+        vscode.postMessage({ type: 'stop', task: { module: task.module, className: task.className, displayName: taskDisplayName } });
       });
       const cfgToggle = document.createElement('button');
       cfgToggle.className = 'cfg-toggle';
-      cfgToggle.textContent = '⚙ 参数';
-      const panel = buildConfigPanel(card, t, schema);
-      if (openPanels.has(taskKey(t))) {
+      cfgToggle.textContent = '⚙ ' + t('parameters');
+      const panel = buildConfigPanel(card, task, schema);
+      if (openPanels.has(taskKey(task))) {
         panel.classList.add('open');
-        cfgToggle.textContent = '▲ 收起参数';
+        cfgToggle.textContent = '▲ ' + t('collapseParameters');
       }
       cfgToggle.addEventListener('click', () => {
         const open = panel.classList.toggle('open');
-        if (open) openPanels.add(taskKey(t)); else openPanels.delete(taskKey(t));
-        cfgToggle.textContent = open ? '▲ 收起参数' : '⚙ 参数';
+        if (open) openPanels.add(taskKey(task)); else openPanels.delete(taskKey(task));
+        cfgToggle.textContent = open ? '▲ ' + t('collapseParameters') : '⚙ ' + t('parameters');
       });
       card.appendChild(nm);
       card.appendChild(cl);
@@ -719,7 +729,7 @@
     for (const b of tasksEl.querySelectorAll('.launch-btn')) {
       b.disabled = r;
       const isCurrent = taskKey({ module: b.dataset.module, className: b.dataset.cls }) === runningTaskKey;
-      b.textContent = r && isCurrent ? '⏳ 运行中…' : '▶ 启动';
+      b.textContent = r && isCurrent ? '⏳ ' + t('running') : '▶ ' + t('launch');
     }
     for (const b of tasksEl.querySelectorAll('.stop-btn')) {
       const isCurrent = taskKey({ module: b.dataset.module, className: b.dataset.cls }) === runningTaskKey;
@@ -746,11 +756,11 @@
       case 'status': setStatus(msg.level, msg.text); break;
       case 'running':
         setRunning(msg.running, msg.task);
-        if (msg.stopping) setStatus('warn', msg.timedOut ? '任务已超时，正在停止…' : '正在停止任务…');
+        if (msg.stopping) setStatus('warn', msg.timedOut ? t('timeoutStopping') : t('stopping'));
         else if (msg.error) setStatus('error', msg.error);
-        else if (msg.stopped) setStatus('warn', msg.timedOut ? '任务超时并已停止，详见输出面板' : '任务已停止，详见输出面板');
-        else if (msg.running === false && msg.code === 0) setStatus('ok', '任务完成，详见输出面板');
-        else if (msg.running === false) setStatus('error', '任务异常结束，详见输出面板');
+        else if (msg.stopped) setStatus('warn', msg.timedOut ? t('taskTimedOut') : t('taskStopped'));
+        else if (msg.running === false && msg.code === 0) setStatus('ok', t('taskCompleted'));
+        else if (msg.running === false) setStatus('error', t('taskFailed'));
         break;
     }
   });

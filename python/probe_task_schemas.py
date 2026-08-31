@@ -23,6 +23,99 @@ sys.stderr.reconfigure(encoding="utf-8")
 UNSERIALIZABLE = object()
 
 
+def _po_string(fragment):
+    """解析 PO 行中的 Python/gettext 引号字符串。"""
+    try:
+        value = ast.literal_eval(fragment.strip())
+        return value if isinstance(value, str) else ""
+    except (SyntaxError, ValueError):
+        return ""
+
+
+def load_po_catalog(project_dir, locale, po_directory="i18n", domain="ok"):
+    """直接读取目标项目 PO，返回 msgid -> msgstr；空译文回退 msgid。"""
+    po_root = po_directory if os.path.isabs(po_directory) else os.path.join(project_dir, po_directory)
+    file_path = os.path.join(po_root, locale, "LC_MESSAGES", f"{domain}.po")
+    if not os.path.isfile(file_path):
+        return {}
+    catalog = {}
+    msgid = None
+    msgstr = None
+    section = None
+
+    def flush():
+        nonlocal msgid, msgstr, section
+        if msgid:
+            catalog[msgid] = msgstr or msgid
+        msgid = None
+        msgstr = None
+        section = None
+
+    with open(file_path, encoding="utf-8") as stream:
+        for raw in stream:
+            line = raw.strip()
+            if not line:
+                flush()
+                continue
+            if line.startswith("#"):
+                continue
+            if line.startswith("msgid "):
+                if msgid is not None:
+                    flush()
+                msgid = _po_string(line[6:])
+                msgstr = ""
+                section = "msgid"
+                continue
+            if line.startswith("msgstr "):
+                msgstr = _po_string(line[7:])
+                section = "msgstr"
+                continue
+            if line.startswith('"'):
+                value = _po_string(line)
+                if section == "msgid" and msgid is not None:
+                    msgid += value
+                elif section == "msgstr" and msgstr is not None:
+                    msgstr += value
+    flush()
+    return catalog
+
+
+def translated(catalog, value):
+    if not isinstance(value, str) or not value:
+        return value
+    return catalog.get(value, value)
+
+
+def translated_type_meta(type_meta, catalog):
+    """复制 config_type，并附加显示标签，不改变任何原始 option 值。"""
+    serialized = jsonable(type_meta)
+    if not isinstance(serialized, dict):
+        return serialized
+    options = type_meta.get("options") if isinstance(type_meta, dict) else None
+    if isinstance(options, (list, tuple)):
+        serialized["option_labels"] = [translated(catalog, value) if isinstance(value, str) else str(value) for value in options]
+    elif isinstance(options, dict):
+        serialized["option_labels"] = {
+            str(category): [translated(catalog, value) if isinstance(value, str) else str(value) for value in values]
+            for category, values in options.items()
+            if isinstance(values, (list, tuple))
+        }
+        serialized["category_labels"] = {
+            str(category): translated(catalog, str(category)) for category in options
+        }
+    available = type_meta.get("options_available") if isinstance(type_meta, dict) else None
+    if isinstance(available, (list, tuple)):
+        serialized["options_available_labels"] = [
+            translated(catalog, value) if isinstance(value, str) else str(value) for value in available
+        ]
+    sub_configs = type_meta.get("sub_configs") if isinstance(type_meta, dict) else None
+    if isinstance(sub_configs, dict):
+        serialized["sub_config_labels"] = {
+            str(choice): translated(catalog, str(choice)) for choice in sub_configs
+        }
+    return serialized
+
+
 def jsonable(v):
     """转成可 JSON 序列化形式；不可序列化对象返回 UNSERIALIZABLE。"""
     if v is None or isinstance(v, (bool, int, float, str)):
@@ -117,6 +210,9 @@ def main():
         print(json.dumps({"ok": False, "error": "缺少 project_dir 参数"}, ensure_ascii=False))
         sys.exit(1)
     project_dir = sys.argv[1]
+    locale = sys.argv[2] if len(sys.argv) > 2 else "zh_CN"
+    po_directory = sys.argv[3] if len(sys.argv) > 3 else "i18n"
+    catalog = load_po_catalog(project_dir, locale, po_directory)
     sys.path.insert(0, project_dir)
     os.chdir(project_dir)
 
@@ -214,7 +310,7 @@ def main():
                     if dv is not None and not isinstance(saved_value, type(dv)):
                         saved_value = dv
                     jv = jsonable(saved_value)
-                    jt = jsonable(type_meta)
+                    jt = translated_type_meta(type_meta, catalog)
                     if jd is UNSERIALIZABLE and jv is UNSERIALIZABLE and jt is UNSERIALIZABLE:
                         continue
                     # 值为 None 且没有可编辑类型的 key 通常只是配置组标题。
@@ -222,22 +318,37 @@ def main():
                         continue
                     fields.append({
                         "key": str(key),
+                        "displayKey": translated(catalog, str(key)),
                         "default": None if jd is UNSERIALIZABLE else jd,
                         "value": (None if jd is UNSERIALIZABLE else jd) if jv is UNSERIALIZABLE else jv,
                         "type": jt if isinstance(jt, dict) else None,
                         "desc": str(config_description.get(key, "")) if config_description.get(key) else "",
+                        "displayDesc": translated(catalog, str(config_description.get(key, ""))) if config_description.get(key) else "",
                     })
+                group_label_names = set(config_groups)
+                for children in config_groups.values():
+                    group_label_names.update(child for child in children if child not in default_config)
+                group_labels = {
+                    group_name: translated(catalog, group_name) for group_name in group_label_names
+                }
                 schemas[task_key] = {
                     "fields": fields,
-                    "displayName": str(getattr(task, "name", "") or cls_name),
-                    "description": str(getattr(task, "description", "") or ""),
+                    "displayName": translated(catalog, str(getattr(task, "name", "") or cls_name)),
+                    "description": translated(catalog, str(getattr(task, "description", "") or "")),
                     "kind": task_kind,
                     "configGroups": config_groups,
+                    "groupLabels": group_labels,
                     "groupSelector": group_selector,
+                    "locale": locale,
                 }
             except Exception as e:
                 broken.append({"task": task_key, "error": f"{type(e).__name__}: {e}"})
-                schemas[task_key] = {"fields": [], "broken": True, "error": f"{type(e).__name__}: {e}"}
+                schemas[task_key] = {
+                    "fields": [],
+                    "broken": True,
+                    "error": f"{type(e).__name__}: {e}",
+                    "locale": locale,
+                }
 
         print(json.dumps({
             "ok": True,

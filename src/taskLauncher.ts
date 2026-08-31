@@ -2,6 +2,7 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { injectWebviewLocalization, projectLocale, tr } from './localization';
 
 /** 单个任务的元信息 */
 interface TaskInfo {
@@ -23,6 +24,7 @@ interface TaskListResult {
 /** 每个任务可编辑的一项参数（对应项目任务 default_config 里的一个 key） */
 interface TaskParamField {
   key: string;
+  displayKey?: string;
   /** 默认值（决定控件类型：bool→开关、int/float→数字、str→文本框、list→多选/列表） */
   default?: unknown;
   /** 当前已保存值 */
@@ -31,6 +33,7 @@ interface TaskParamField {
   type?: Record<string, unknown>;
   /** config_description 说明 */
   desc?: string;
+  displayDesc?: string;
 }
 
 /** 从项目任务类采集到的 schema */
@@ -45,8 +48,10 @@ interface TaskSchema {
   kind?: 'onetime' | 'trigger';
   /** 项目声明的配置分组/子任务树：组名 -> 字段或子组 key。 */
   configGroups?: Record<string, string[]>;
+  groupLabels?: Record<string, string>;
   /** register_config_groups 生成的分组下拉字段。 */
   groupSelector?: string;
+  locale?: string;
 }
 
 /** 每个任务的独立配置（持久化到 .vscode/ok-lang-hints-tasks.json） */
@@ -127,7 +132,7 @@ function parseExtraArgs(value: string | undefined): string[] {
     }
   }
   if (escaped) current += '\\';
-  if (quote) throw new Error('额外参数存在未闭合的引号');
+  if (quote) throw new Error(tr('Extra arguments contain an unclosed quote'));
   if (current) args.push(current);
   return args;
 }
@@ -177,7 +182,7 @@ async function parseConfigTasks(extensionUri: vscode.Uri, projectDir: string, py
     );
     const parsed = parseJsonFromStdout(result.stdout || '');
     if (!parsed || !parsed.ok) {
-      return { ok: false, error: parsed?.error || '解析任务列表失败' };
+      return { ok: false, error: parsed?.error || tr('Failed to parse task list') };
     }
     const configModule = parsed.config_module || 'src.config';
     const tasks: TaskInfo[] = [
@@ -216,17 +221,23 @@ function buildRunTaskCommand(extensionUri: vscode.Uri, task: TaskInfo, configMod
  * 初始化来实例化任务，拿到经过继承链合并的真实 default_config / config_type /
  * config_description / 已保存 config。逐任务 try/except 容错，坏任务标记 broken。
  */
-async function probeTaskSchemas(extensionUri: vscode.Uri, projectDir: string, pythonPath: string): Promise<SchemaProbeResult> {
+async function probeTaskSchemas(
+  extensionUri: vscode.Uri,
+  projectDir: string,
+  pythonPath: string,
+  locale: string,
+  poDirectory: string,
+): Promise<SchemaProbeResult> {
   try {
     const result = await runPython(
       pythonPath,
-      [pythonScript(extensionUri, 'probe_task_schemas.py'), projectDir],
+      [pythonScript(extensionUri, 'probe_task_schemas.py'), projectDir, locale, poDirectory],
       projectDir,
       120000,
     );
     const parsed = parseJsonFromStdout(result.stdout || '');
     if (!parsed || !parsed.ok) {
-      return { ok: false, error: parsed?.error || '采集任务 schema 失败' };
+      return { ok: false, error: parsed?.error || tr('Failed to collect task schema') };
     }
     return { ok: true, schemas: parsed.schemas, total: parsed.total };
   } catch (e) {
@@ -258,7 +269,7 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly extensionUri: vscode.Uri,
   ) {
-    this.output = vscode.window.createOutputChannel('ok-script 任务启动');
+    this.output = vscode.window.createOutputChannel(tr('ok-script Task Launcher'));
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -344,7 +355,9 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
       }
     } catch (e) {
       this.taskConfigs = {};
-      void vscode.window.showWarningMessage(`读取任务配置失败: ${e instanceof Error ? e.message : String(e)}`);
+      void vscode.window.showWarningMessage(tr('Failed to read task configuration: {error}', {
+        error: e instanceof Error ? e.message : String(e),
+      }));
     }
     if (this.view) {
       void this.view.webview.postMessage({ type: 'taskConfigs', configs: this.taskConfigs });
@@ -368,7 +381,9 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
       store.projects[this.currentProjectDir] = { tasks: nextConfigs };
       fs.writeFileSync(p, JSON.stringify(store, null, 2), 'utf-8');
     } catch (e) {
-      const message = `保存任务配置失败: ${e instanceof Error ? e.message : String(e)}`;
+      const message = tr('Failed to save task configuration: {error}', {
+        error: e instanceof Error ? e.message : String(e),
+      });
       void vscode.window.showErrorMessage(message);
       if (this.view) {
         void this.view.webview.postMessage({ type: 'status', level: 'error', text: message });
@@ -378,28 +393,35 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     this.taskConfigs = nextConfigs;
     if (this.view) {
       void this.view.webview.postMessage({ type: 'taskConfigs', configs: this.taskConfigs });
-      void this.view.webview.postMessage({ type: 'status', level: 'ok', text: `已保存 ${task.displayName} 的参数` });
+      void this.view.webview.postMessage({
+        type: 'status',
+        level: 'ok',
+        text: tr('Saved parameters for {task}', {
+          task: this.schemas[this.taskKey(task)]?.displayName || task.displayName,
+        }),
+      });
     }
   }
 
   /** 读取 schema 缓存；无缓存时返回空 */
-  private loadSchemaCache(projectDir: string): Record<string, TaskSchema> {
+  private loadSchemaCache(projectDir: string, locale: string): Record<string, TaskSchema> {
     try {
       const p = this.dataFile('ok-lang-hints-schema.json');
       if (fs.existsSync(p)) {
-        const raw = JSON.parse(fs.readFileSync(p, 'utf-8')) as SchemaProbeResult & { projectDir?: string };
-        return raw.projectDir === projectDir ? raw.schemas || {} : {};
+        const raw = JSON.parse(fs.readFileSync(p, 'utf-8')) as SchemaProbeResult & { projectDir?: string; locale?: string };
+        const cachedLocale = raw.locale || Object.values(raw.schemas || {})[0]?.locale;
+        return raw.projectDir === projectDir && cachedLocale === locale ? raw.schemas || {} : {};
       }
     } catch { /* 忽略损坏的缓存 */ }
     return {};
   }
 
   /** 写入 schema 缓存 */
-  private saveSchemaCache(projectDir: string, schemas: Record<string, TaskSchema>): void {
+  private saveSchemaCache(projectDir: string, locale: string, schemas: Record<string, TaskSchema>): void {
     try {
       const p = this.dataFile('ok-lang-hints-schema.json');
       fs.mkdirSync(path.dirname(p), { recursive: true });
-      fs.writeFileSync(p, JSON.stringify({ ok: true, projectDir, schemas }, null, 2), 'utf-8');
+      fs.writeFileSync(p, JSON.stringify({ ok: true, projectDir, locale, schemas }, null, 2), 'utf-8');
     } catch { /* 缓存失败不阻塞 */ }
   }
 
@@ -436,12 +458,13 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     const generation = ++this.refreshGeneration;
     this.knownTasks = [];
     const { projectDir, pythonPath, fromConfig } = this.getConfig();
+    const locale = projectLocale();
     if (!projectDir) {
       void view.webview.postMessage({ type: 'tasks', tasks: [], schemas: {} });
       void view.webview.postMessage({
         type: 'status',
         level: 'warn',
-        text: '未找到 ok-script 项目。请在设置中填写 okLangHints.okScriptProjectPath，或打开含 src/config.py 的 ok-script 项目文件夹。',
+        text: tr('No ok-script project was found. Configure okLangHints.okScriptProjectPath or open a folder containing src/config.py.'),
       });
       return;
     }
@@ -450,13 +473,13 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
       void view.webview.postMessage({
         type: 'status',
         level: 'warn',
-        text: `项目目录不存在: ${projectDir}`,
+        text: tr('Project directory does not exist: {path}', { path: projectDir }),
       });
       return;
     }
     // 先读缓存（可能有上次采集的 schema，先让 UI 能用）
     this.currentProjectDir = projectDir;
-    this.schemas = this.loadSchemaCache(projectDir);
+    this.schemas = this.loadSchemaCache(projectDir, locale);
     this.loadTaskConfigs(projectDir);
     const result = await parseConfigTasks(this.extensionUri, projectDir, pythonPath);
     if (generation !== this.refreshGeneration) return;
@@ -465,37 +488,58 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
       void view.webview.postMessage({
         type: 'status',
         level: 'error',
-        text: `任务列表加载失败: ${result.error}`,
+        text: tr('Failed to load task list: {error}', { error: result.error || tr('Unknown error') }),
       });
       return;
     }
     if (result.configModule) this.configModule = result.configModule;
-    this.knownTasks = result.tasks || [];
-    await view.webview.postMessage({ type: 'tasks', tasks: result.tasks, schemas: this.schemas });
+    const tasks = (result.tasks || []).map((task) => ({
+      ...task,
+      displayName: this.schemas[this.taskKey(task)]?.displayName || task.displayName,
+    }));
+    this.knownTasks = tasks;
+    await view.webview.postMessage({ type: 'tasks', tasks, schemas: this.schemas });
     void view.webview.postMessage({
       type: 'status',
       level: 'ok',
-      text: `${fromConfig ? '' : '自动检测到工作区项目 · '}已加载 ${result.tasks?.length ?? 0} 个任务`,
+      text: fromConfig
+        ? tr('Loaded {count} tasks', { count: tasks.length })
+        : tr('Workspace project detected · Loaded {count} tasks', { count: tasks.length }),
     });
 
     // 后台全量 import 采集 schema（失败不影响任务列表，仅提示）
-    void this.probeSchemasInBackground(view, projectDir, pythonPath, generation);
+    void this.probeSchemasInBackground(view, projectDir, pythonPath, locale, generation);
   }
 
   /** 后台采集任务参数 schema：全量 import 项目任务，成功则缓存并回推给 UI */
-  private async probeSchemasInBackground(view: vscode.WebviewView, projectDir: string, pythonPath: string, generation: number): Promise<void> {
-    const probe = await probeTaskSchemas(this.extensionUri, projectDir, pythonPath);
+  private async probeSchemasInBackground(
+    view: vscode.WebviewView,
+    projectDir: string,
+    pythonPath: string,
+    locale: string,
+    generation: number,
+  ): Promise<void> {
+    const poDirectory = vscode.workspace.getConfiguration('okLangHints').get<string>('poDirectory') || 'i18n';
+    const probe = await probeTaskSchemas(
+      this.extensionUri,
+      projectDir,
+      pythonPath,
+      locale,
+      poDirectory,
+    );
     if (generation !== this.refreshGeneration || projectDir !== this.currentProjectDir) return;
     if (!probe.ok || !probe.schemas) {
       void view.webview.postMessage({
         type: 'status',
         level: 'warn',
-        text: `任务参数 schema 采集失败（不影响启动）: ${probe.error || '未知错误'}`,
+        text: tr('Failed to collect task parameter schema (launch is still available): {error}', {
+          error: probe.error || tr('Unknown error'),
+        }),
       });
       return;
     }
     this.schemas = probe.schemas;
-    this.saveSchemaCache(projectDir, probe.schemas);
+    this.saveSchemaCache(projectDir, locale, probe.schemas);
     const brokenCount = Object.values(probe.schemas).filter((s) => s.broken).length;
     // 只回推 schema 更新，让 UI 把已展开的任务卡片渲染出参数表单
     void view.webview.postMessage({ type: 'schemas', schemas: this.schemas });
@@ -503,27 +547,32 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
       void view.webview.postMessage({
         type: 'status',
         level: 'ok',
-        text: `已加载 ${probe.total ?? 0} 个任务，参数 schema 已就绪${brokenCount ? `（${brokenCount} 个采集失败）` : ''}`,
+        text: brokenCount
+          ? tr('Loaded {count} tasks; parameter schema is ready ({broken} failed)', {
+              count: probe.total ?? 0,
+              broken: brokenCount,
+            })
+          : tr('Loaded {count} tasks; parameter schema is ready', { count: probe.total ?? 0 }),
       });
     }
   }
 
   private async launchTask(view: vscode.WebviewView, task: TaskInfo): Promise<void> {
     if (this.running) {
-      void vscode.window.showWarningMessage('已有任务在运行，请先等待完成或停止。');
+      void vscode.window.showWarningMessage(tr('A task is already running. Wait for it to finish or stop it first.'));
       return;
     }
     const { projectDir, pythonPath } = this.getConfig();
     if (!projectDir) {
-      void vscode.window.showErrorMessage('未配置 ok-script 项目路径。');
+      void vscode.window.showErrorMessage(tr('The ok-script project path is not configured.'));
       return;
     }
     if (!fs.existsSync(projectDir)) {
-      void vscode.window.showErrorMessage(`项目目录不存在: ${projectDir}`);
+      void vscode.window.showErrorMessage(tr('Project directory does not exist: {path}', { path: projectDir }));
       return;
     }
     if (!fs.existsSync(pythonPath) && pythonPath !== 'python') {
-      void vscode.window.showErrorMessage(`Python 解释器不存在: ${pythonPath}`);
+      void vscode.window.showErrorMessage(tr('Python interpreter does not exist: {path}', { path: pythonPath }));
       return;
     }
     this.currentTask = task;
@@ -531,13 +580,13 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     this.stopRequested = false;
     this.timedOutRequested = false;
     this.output.clear();
-    this.output.appendLine(`▶ 启动任务: ${task.displayName} (${task.module})`);
-    this.output.appendLine(`项目: ${projectDir}`);
-    this.output.appendLine(`Python: ${pythonPath}`);
+    this.output.appendLine(tr('▶ Launch task: {task} ({module})', { task: task.displayName, module: task.module }));
+    this.output.appendLine(tr('Project: {path}', { path: projectDir }));
+    this.output.appendLine(tr('Python: {path}', { path: pythonPath }));
     // 带出该任务的独立配置（params 参数覆盖注入运行时）
     const cfg = this.getTaskConfig(task);
     if (cfg?.params && Object.keys(cfg.params).length > 0) {
-      this.output.appendLine(`参数覆盖: ${Object.keys(cfg.params).length} 项`);
+      this.output.appendLine(tr('Parameter overrides: {count}', { count: Object.keys(cfg.params).length }));
     }
     this.output.show(true);
     void view.webview.postMessage({ type: 'running', task, running: true });
@@ -548,7 +597,7 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     } catch (e) {
       this.running = false;
       const message = e instanceof Error ? e.message : String(e);
-      void vscode.window.showErrorMessage(`无法启动任务: ${message}`);
+      void vscode.window.showErrorMessage(tr('Failed to launch task: {error}', { error: message }));
       void view.webview.postMessage({ type: 'running', task, running: false, error: message });
       return;
     }
@@ -576,8 +625,8 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
       this.running = false;
       this.childProcess = null;
       this.output.appendLine('');
-      this.output.appendLine(`❌ 无法启动 Python 进程: ${err.message}`);
-      void vscode.window.showErrorMessage(`无法启动任务: ${err.message}`);
+      this.output.appendLine(tr('❌ Failed to start Python process: {error}', { error: err.message }));
+      void vscode.window.showErrorMessage(tr('Failed to launch task: {error}', { error: err.message }));
       void view.webview.postMessage({ type: 'running', task, running: false, error: err.message });
     });
     this.childProcess.on('close', (code) => {
@@ -587,7 +636,11 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
       this.running = false;
       this.childProcess = null;
       this.output.appendLine('');
-      this.output.appendLine(stopped ? '⏹ 任务已停止' : (code === 0 ? '✅ 任务完成' : `❌ 任务退出码: ${code}`));
+      this.output.appendLine(stopped
+        ? tr('⏹ Task stopped')
+        : code === 0
+          ? tr('✅ Task completed')
+          : tr('❌ Task exit code: {code}', { code: code ?? 'null' }));
       void view.webview.postMessage({
         type: 'running',
         task,
@@ -595,17 +648,20 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
         code,
         stopped,
         timedOut,
-        error: !stopped && code !== 0 ? `任务退出码: ${code}` : undefined,
+        error: !stopped && code !== 0 ? tr('Task exit code: {code}', { code: code ?? 'null' }) : undefined,
       });
     });
     if (cfg.timeout && cfg.timeout > 0) {
+      const timeoutSeconds = cfg.timeout;
       this.timeoutTimer = setTimeout(() => {
         if (this.running && this.childProcess) {
           this.output.appendLine('');
-          this.output.appendLine(`⏱ 已达到 ${cfg.timeout} 秒超时，正在停止任务...`);
+          this.output.appendLine(tr('⏱ Timeout reached after {seconds} seconds; stopping task...', {
+            seconds: timeoutSeconds,
+          }));
           void this.stopTask(true);
         }
-      }, cfg.timeout * 1000);
+      }, timeoutSeconds * 1000);
     }
   }
 
@@ -620,12 +676,12 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
 
   private async stopTask(timedOut = false): Promise<void> {
     if (!this.running || !this.childProcess || !this.view) {
-      void vscode.window.showWarningMessage('没有正在运行的任务。');
+      void vscode.window.showWarningMessage(tr('No task is currently running.'));
       return;
     }
     
     this.output.appendLine('');
-    this.output.appendLine(timedOut ? '⏱ 正在停止超时任务...' : '⏹ 正在停止任务...');
+    this.output.appendLine(timedOut ? tr('⏱ Stopping timed-out task...') : tr('⏹ Stopping task...'));
     this.stopRequested = true;
     this.timedOutRequested = timedOut;
     void this.view.webview.postMessage({ type: 'running', task: this.currentTask, running: true, stopping: true, timedOut });
@@ -636,7 +692,7 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
         // Windows: 使用 taskkill
         const pid = this.childProcess.pid;
         if (!pid) {
-          throw new Error('无法获取进程 PID');
+          throw new Error(tr('Unable to get the process PID'));
         }
         const taskkill = cp.spawnSync('taskkill', ['/F', '/T', '/PID', pid.toString()], {
           windowsHide: true,
@@ -646,7 +702,9 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
           throw taskkill.error;
         }
         if (taskkill.status !== 0) {
-          throw new Error(taskkill.stderr?.toString().trim() || `taskkill 退出码 ${taskkill.status}`);
+          throw new Error(taskkill.stderr?.toString().trim() || tr('taskkill exit code {code}', {
+            code: taskkill.status ?? 'null',
+          }));
         }
       } else {
         // Unix-like: 发送 SIGTERM
@@ -655,9 +713,15 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     } catch (err) {
       this.stopRequested = false;
       this.timedOutRequested = false;
-      this.output.appendLine(`❌ 停止任务失败: ${err instanceof Error ? err.message : String(err)}`);
-      void vscode.window.showErrorMessage(`停止任务失败: ${err instanceof Error ? err.message : String(err)}`);
-      void this.view.webview.postMessage({ type: 'running', task: this.currentTask, running: true, error: `停止失败: ${err instanceof Error ? err.message : String(err)}` });
+      const error = err instanceof Error ? err.message : String(err);
+      this.output.appendLine(tr('❌ Failed to stop task: {error}', { error }));
+      void vscode.window.showErrorMessage(tr('Failed to stop task: {error}', { error }));
+      void this.view.webview.postMessage({
+        type: 'running',
+        task: this.currentTask,
+        running: true,
+        error: tr('Failed to stop: {error}', { error }),
+      });
     }
   }
 
@@ -686,8 +750,8 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     try {
       html = fs.readFileSync(htmlPath, 'utf-8');
     } catch (e) {
-      return `<!DOCTYPE html><html lang="zh-cn"><head><meta charset="UTF-8"><title>错误</title></head><body style="font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:16px">无法读取视图文件: ${e instanceof Error ? e.message : String(e)}</body></html>`;
+      return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${tr('Error')}</title></head><body style="font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:16px">${tr('Unable to read view file: {error}', { error: e instanceof Error ? e.message : String(e) })}</body></html>`;
     }
-    return html.split('__CSP_NONCE__').join(nonce);
+    return injectWebviewLocalization(html.split('__CSP_NONCE__').join(nonce));
   }
 }
