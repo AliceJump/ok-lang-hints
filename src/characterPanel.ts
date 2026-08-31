@@ -143,7 +143,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
   }
 
   private buildHtml(webview: vscode.Webview): string {
-    const file = path.join(this.extensionUri.fsPath, 'media', 'characterManager.html');
+    const file = path.join(this.extensionUri.fsPath, 'media', 'characterManager', 'index.html');
     try {
       const nonce = getNonce();
       const resource = (name: string) => webview.asWebviewUri(

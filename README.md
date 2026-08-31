@@ -103,6 +103,23 @@
 
 保存 JSON（包括效果名称）、COCO 标注、PNG 或 `effects.py` 后，扩展会自动刷新，无需重启项目。
 
+## 项目结构
+
+```text
+src/                         VS Code 扩展宿主 TypeScript 源码
+media/
+	icons/                     活动栏与视图图标
+	taskLauncher/              任务启动器 Webview（index.html、CSS、组件脚本）
+	characterManager/          角色技能管理 Webview（index.html、CSS、交互脚本）
+python/                      随扩展发布的任务发现、探测与执行辅助脚本
+scripts/                     开发期生成与回归测试工具，不打入 VSIX
+l10n/                        扩展宿主运行时本地化资源
+package.nls*.json            扩展清单本地化资源
+out/                         TypeScript 编译产物（由构建生成）
+```
+
+每个外置 Webview 的 HTML、CSS 和 JavaScript 均放在同一功能目录中；宿主通过 CSP 限制和 `asWebviewUri()` 加载资源。
+
 ## 安装
 
 方式一（打包安装，推荐）：
@@ -114,7 +131,7 @@ npm run compile
 npx @vscode/vsce package --allow-missing-repository
 ```
 
-然后在 VS Code 中：`Ctrl+Shift+P` → **Extensions: Install from VSIX...** → 选择生成的 `ok-lang-hints-0.1.0.vsix`。
+然后在 VS Code 中：`Ctrl+Shift+P` → **Extensions: Install from VSIX...** → 选择生成的 `ok-lang-hints-0.3.0.vsix`。
 
 方式二（开发调试）：
 

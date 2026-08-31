@@ -4,8 +4,8 @@ const jsdomRoot = process.env.OK_LANG_HINTS_JSDOM_ROOT || path.join(process.env.
 const { JSDOM, VirtualConsole } = require(path.join(jsdomRoot, 'node_modules', 'jsdom'));
 
 const root = path.resolve(__dirname, '..');
-let html = fs.readFileSync(path.join(root, 'media', 'taskLauncher.html'), 'utf8');
 const componentRoot = path.join(root, 'media', 'taskLauncher');
+let html = fs.readFileSync(path.join(componentRoot, 'index.html'), 'utf8');
 const source = fs.readFileSync(path.join(root, 'src', 'localization.ts'), 'utf8');
 const match = /const EN: WebviewStrings = \{([\s\S]*?)\n\};/.exec(source);
 if (!match) throw new Error('EN dictionary not found');

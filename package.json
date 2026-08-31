@@ -67,7 +67,7 @@
         {
           "id": "okLangHints",
           "title": "%viewContainer.title%",
-          "icon": "media/templates.svg"
+          "icon": "media/icons/templates.svg"
         }
       ]
     },
@@ -77,7 +77,7 @@
           "type": "webview",
           "id": "okLangHints.templateGallery",
           "name": "%view.templateGallery%",
-          "icon": "media/templates.svg",
+          "icon": "media/icons/templates.svg",
           "webviewOptions": {
             "retainContextWhenHidden": true
           }
@@ -86,7 +86,7 @@
           "type": "webview",
           "id": "okLangHints.taskLauncher",
           "name": "%view.taskLauncher%",
-          "icon": "media/task.svg",
+          "icon": "media/icons/task.svg",
           "webviewOptions": {
             "retainContextWhenHidden": true
           }
@@ -95,7 +95,7 @@
           "type": "webview",
           "id": "okLangHints.toolbox",
           "name": "%view.toolbox%",
-          "icon": "media/toolbox.svg"
+          "icon": "media/icons/toolbox.svg"
         }
       ]
     },

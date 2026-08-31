@@ -743,10 +743,10 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** 读取外部 HTML 视图（media/taskLauncher.html）并注入 CSP nonce */
+  /** 读取任务启动器 Webview 外壳并注入 CSP 与本地资源 URI。 */
   private buildHtml(webview: vscode.Webview): string {
     const nonce = Math.random().toString(36).slice(2, 14);
-    const htmlPath = path.join(this.extensionUri.fsPath, 'media', 'taskLauncher.html');
+    const htmlPath = path.join(this.extensionUri.fsPath, 'media', 'taskLauncher', 'index.html');
     let html = '';
     try {
       html = fs.readFileSync(htmlPath, 'utf-8');
