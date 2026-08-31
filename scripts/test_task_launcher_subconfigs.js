@@ -3,8 +3,9 @@ const path = require('path');
 const jsdomRoot = process.env.OK_LANG_HINTS_JSDOM_ROOT || path.join(process.env.TEMP, 'ok-lang-hints-jsdom');
 const { JSDOM, VirtualConsole } = require(path.join(jsdomRoot, 'node_modules', 'jsdom'));
 
-const root = 'd:/items/project/github_project/ok-lang-hints';
+const root = path.resolve(__dirname, '..');
 let html = fs.readFileSync(path.join(root, 'media', 'taskLauncher.html'), 'utf8');
+const componentRoot = path.join(root, 'media', 'taskLauncher');
 const source = fs.readFileSync(path.join(root, 'src', 'localization.ts'), 'utf8');
 const match = /const EN: WebviewStrings = \{([\s\S]*?)\n\};/.exec(source);
 if (!match) throw new Error('EN dictionary not found');
@@ -20,7 +21,20 @@ const dictionary = {
   stopping: 'Stopping', timeoutStopping: 'Timeout', taskTimedOut: 'Timed out', taskStopped: 'Stopped',
   taskCompleted: 'Completed', taskFailed: 'Failed'
 };
-html = html.replaceAll('__CSP_NONCE__', 'test').replaceAll('__I18N_JSON__', JSON.stringify(dictionary));
+html = html
+  .replaceAll('__CSP_NONCE__', 'test')
+  .replaceAll('__CSP_SOURCE__', "'self'")
+  .replaceAll('__I18N_JSON__', JSON.stringify(dictionary))
+  .replace('<link rel="stylesheet" href="__STYLE_URI__">', `<style>${fs.readFileSync(path.join(componentRoot, 'taskLauncher.css'), 'utf8')}</style>`);
+for (const [marker, file] of [
+  ['__CORE_SCRIPT_URI__', 'core.js'],
+  ['__FIELDS_SCRIPT_URI__', 'fields.js'],
+  ['__CONFIG_PANEL_SCRIPT_URI__', 'configPanel.js'],
+  ['__TASK_CARD_SCRIPT_URI__', 'taskCard.js'],
+  ['__APP_SCRIPT_URI__', 'app.js'],
+]) {
+  html = html.replace(`<script src="${marker}"></script>`, `<script>${fs.readFileSync(path.join(componentRoot, file), 'utf8')}</script>`);
+}
 const sent = [];
 const virtualConsole = new VirtualConsole();
 virtualConsole.on('jsdomError', error => { throw error; });
@@ -57,24 +71,24 @@ const schema = {
 };
 window.dispatchEvent(new window.MessageEvent('message', { data: { type: 'tasks', tasks: [task], schemas: { 'demo::DemoTask': schema } } }));
 
-const labels = [...window.document.querySelectorAll('.cfg-group-title')].map(node => node.textContent.trim());
-const fieldRows = key => [...window.document.querySelectorAll(`.cfg-field[data-key="${key}"]`)];
-const groupByTitle = title => [...window.document.querySelectorAll('.cfg-group')].find(group => group.querySelector(':scope > .cfg-group-header .cfg-group-title')?.textContent.trim() === title);
+const labels = [...window.document.querySelectorAll('.config-group__title')].map(node => node.textContent.trim());
+const fieldRows = key => [...window.document.querySelectorAll(`.config-field[data-key="${key}"]`)];
+const groupByTitle = title => [...window.document.querySelectorAll('.config-group')].find(group => group.querySelector(':scope > .config-group__header .config-group__title')?.textContent.trim() === title);
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 
 assert(fieldRows('groupSelector').length === 0, 'register_config_groups selector must be hidden');
 assert(labels.includes('A Group') && labels.includes('B Group'), 'all registered groups must be rendered');
 assert(labels.includes('Group One') && labels.includes('Group Two'), 'all option sub-config groups must be rendered');
 assert(fieldRows('shared').length >= 2, 'shared field must appear in every option group');
-assert(window.document.querySelectorAll('.cfg-group').length >= 5, 'expected permanent collapse groups');
+assert(window.document.querySelectorAll('.config-group').length >= 5, 'expected permanent collapse groups');
 assert(fieldRows('inlineA').length === 1, 'boolean sub-config child must render once');
-assert(fieldRows('inlineA')[0].classList.contains('cfg-subconfig'), 'boolean sub-config child must be inline-styled');
-assert(!fieldRows('inlineA')[0].closest('.cfg-group'), 'top-level boolean sub-config must not get a collapse group');
-assert(fieldRows('inlineA')[0].style.display === 'none', 'false boolean switch must hide True children');
+assert(fieldRows('inlineA')[0].classList.contains('is-subconfig'), 'boolean sub-config child must be inline-styled');
+assert(!fieldRows('inlineA')[0].closest('.config-group'), 'top-level boolean sub-config must not get a collapse group');
+assert(fieldRows('inlineA')[0].hidden, 'false boolean switch must hide True children');
 const boolSwitch = fieldRows('boolSwitch')[0].querySelector('input[type="checkbox"]');
 boolSwitch.checked = true;
 boolSwitch.dispatchEvent(new window.Event('change', { bubbles: true }));
-assert(fieldRows('inlineA')[0].style.display !== 'none', 'enabling a boolean switch must reveal its inline children');
+assert(!fieldRows('inlineA')[0].hidden, 'enabling a boolean switch must reveal its inline children');
 assert(groupByTitle('Group One') && groupByTitle('Group Two'), 'option groups must not depend on selected value');
 assert(!groupByTitle('Group One').classList.contains('open') && !groupByTitle('Group Two').classList.contains('open'), 'collapse state must default closed, independent of config values');
 const selector = fieldRows('selector')[0].querySelector('select');
@@ -82,12 +96,12 @@ selector.value = '1';
 selector.dispatchEvent(new window.Event('change', { bubbles: true }));
 assert(groupByTitle('Group One') && groupByTitle('Group Two'), 'changing a selector must not hide or remove any option group');
 assert(fieldRows('titleField').length === 1, 'config field may act as a group title without a duplicate row');
-assert(fieldRows('titleField')[0].closest('.cfg-group'), 'config field title must still register a collapse group');
-assert(fieldRows('titleChild').length === 1 && fieldRows('titleChild')[0].classList.contains('cfg-subconfig'), 'title switch children must remain inline in the title group');
+assert(fieldRows('titleField')[0].closest('.config-group'), 'config field title must still register a collapse group');
+assert(fieldRows('titleChild').length === 1 && fieldRows('titleChild')[0].classList.contains('is-subconfig'), 'title switch children must remain inline in the title group');
 const titleSwitch = fieldRows('titleField')[0].querySelector('input[type="checkbox"]');
 titleSwitch.checked = true;
 titleSwitch.dispatchEvent(new window.Event('change', { bubbles: true }));
-assert(fieldRows('titleChild')[0].style.display !== 'none', 'config-title switch must reveal inline children without changing fold state');
+assert(!fieldRows('titleChild')[0].hidden, 'config-title switch must reveal inline children without changing fold state');
 assert(fieldRows('plainChild').length === 1, 'title group regular child must render');
 
 const realSchemaFile = process.argv[2];
@@ -99,10 +113,10 @@ if (realSchemaFile) {
   const [dailyKey, dailySchema] = dailyEntry;
   const dailyTask = { module: dailyKey.split('::')[0], className: 'DailyTask', displayName: dailySchema.displayName || 'DailyTask' };
   window.dispatchEvent(new window.MessageEvent('message', { data: { type: 'tasks', tasks: [dailyTask], schemas: { [dailyKey]: dailySchema } } }));
-  const dailyLabels = [...window.document.querySelectorAll('.cfg-group')].map(group => {
-    const header = group.querySelector(':scope > .cfg-group-header');
-    return header?.querySelector('.cfg-group-title')?.textContent.trim()
-      || header?.querySelector('.cfg-field > label')?.childNodes[0]?.textContent.trim()
+  const dailyLabels = [...window.document.querySelectorAll('.config-group')].map(group => {
+    const header = group.querySelector(':scope > .config-group__header');
+    return header?.querySelector('.config-group__title')?.textContent.trim()
+      || header?.querySelector('.config-field > label')?.childNodes[0]?.textContent.trim()
       || '';
   }).filter(Boolean);
   const expectedGroups = Object.keys(dailySchema.configGroups || {}).filter(key => key !== '配置选择');
@@ -111,7 +125,7 @@ if (realSchemaFile) {
     if (typeof field.default !== 'boolean' && typeof field.value !== 'boolean') continue;
     for (const choice of Object.keys(field.type?.sub_configs || {})) boolSubConfigLabels.add(String(choice));
   }
-  assert(window.document.querySelectorAll('.cfg-field[data-key="配置选择"]').length === 0, 'real register_config_groups selector must be hidden');
+  assert(window.document.querySelectorAll('.config-field[data-key="配置选择"]').length === 0, 'real register_config_groups selector must be hidden');
   const missingGroups = expectedGroups.filter(group => !dailyLabels.includes(dailySchema.groupLabels?.[group] || group));
   if (missingGroups.length) console.log('REAL_DEBUG', JSON.stringify({ dailyLabels, missingGroups }));
   assert(!missingGroups.length, 'all real registered groups must be rendered together');

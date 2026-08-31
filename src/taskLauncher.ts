@@ -276,8 +276,9 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     this.view = view;
     view.webview.options = {
       enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'media', 'taskLauncher')],
     };
-    view.webview.html = this.buildHtml();
+    view.webview.html = this.buildHtml(view.webview);
 
     view.webview.onDidReceiveMessage(async (msg) => {
       switch (msg.type) {
@@ -743,7 +744,7 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
   }
 
   /** 读取外部 HTML 视图（media/taskLauncher.html）并注入 CSP nonce */
-  private buildHtml(): string {
+  private buildHtml(webview: vscode.Webview): string {
     const nonce = Math.random().toString(36).slice(2, 14);
     const htmlPath = path.join(this.extensionUri.fsPath, 'media', 'taskLauncher.html');
     let html = '';
@@ -752,6 +753,19 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     } catch (e) {
       return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${tr('Error')}</title></head><body style="font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:16px">${tr('Unable to read view file: {error}', { error: e instanceof Error ? e.message : String(e) })}</body></html>`;
     }
-    return injectWebviewLocalization(html.split('__CSP_NONCE__').join(nonce));
+    const resource = (name: string) => webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'taskLauncher', name),
+    ).toString(true);
+    return injectWebviewLocalization(
+      html
+        .split('__CSP_NONCE__').join(nonce)
+        .split('__CSP_SOURCE__').join(webview.cspSource)
+        .split('__STYLE_URI__').join(resource('taskLauncher.css'))
+        .split('__CORE_SCRIPT_URI__').join(resource('core.js'))
+        .split('__FIELDS_SCRIPT_URI__').join(resource('fields.js'))
+        .split('__CONFIG_PANEL_SCRIPT_URI__').join(resource('configPanel.js'))
+        .split('__TASK_CARD_SCRIPT_URI__').join(resource('taskCard.js'))
+        .split('__APP_SCRIPT_URI__').join(resource('app.js')),
+    );
   }
 }
