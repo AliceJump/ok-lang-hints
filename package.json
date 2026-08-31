@@ -1,7 +1,7 @@
 {
   "name": "ok-lang-hints",
-  "displayName": "ok-script Lang Hints",
-  "description": "为 ok-script 的 self.lang 与 FeatureList/fL 提供智能补全、值提示、类型区分、模板 hover 预览和图片缓存。",
+  "displayName": "%extension.displayName%",
+  "description": "%extension.description%",
   "version": "0.3.0",
   "publisher": "AliceJump",
   "license": "MIT",
@@ -38,34 +38,35 @@
     "onLanguage:jsonc"
   ],
   "main": "./out/extension.js",
+  "l10n": "./l10n",
   "contributes": {
     "commands": [
       {
         "command": "okLangHints.showTemplates",
-        "title": "打开模板面板",
-        "category": "ok-script Lang Hints"
+        "title": "%command.showTemplates%",
+        "category": "%command.category%"
       },
       {
         "command": "okLangHints.openTemplatesEditor",
-        "title": "在编辑器中打开模板面板（大窗口）",
-        "category": "ok-script Lang Hints"
+        "title": "%command.openTemplatesEditor%",
+        "category": "%command.category%"
       },
       {
         "command": "okLangHints.showTaskLauncher",
-        "title": "打开任务启动",
-        "category": "ok-script Lang Hints"
+        "title": "%command.showTaskLauncher%",
+        "category": "%command.category%"
       },
       {
         "command": "okLangHints.openCharacterManager",
-        "title": "打开角色技能管理面板",
-        "category": "ok-script Lang Hints"
+        "title": "%command.openCharacterManager%",
+        "category": "%command.category%"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "okLangHints",
-          "title": "ok-script 模板",
+          "title": "%viewContainer.title%",
           "icon": "media/templates.svg"
         }
       ]
@@ -75,7 +76,7 @@
         {
           "type": "webview",
           "id": "okLangHints.templateGallery",
-          "name": "模板面板",
+          "name": "%view.templateGallery%",
           "icon": "media/templates.svg",
           "webviewOptions": {
             "retainContextWhenHidden": true
@@ -84,7 +85,7 @@
         {
           "type": "webview",
           "id": "okLangHints.taskLauncher",
-          "name": "任务启动",
+          "name": "%view.taskLauncher%",
           "icon": "media/task.svg",
           "webviewOptions": {
             "retainContextWhenHidden": true
@@ -93,7 +94,7 @@
         {
           "type": "webview",
           "id": "okLangHints.toolbox",
-          "name": "工具箱",
+          "name": "%view.toolbox%",
           "icon": "media/toolbox.svg"
         }
       ]
@@ -107,22 +108,22 @@
       }
     ],
     "configuration": {
-      "title": "ok-script Lang Hints",
+      "title": "%configuration.title%",
       "properties": {
         "okLangHints.langDirectory": {
           "type": "string",
           "default": "assets/lang",
-          "description": "lang JSON 目录（相对于工作区根目录）。"
+          "description": "%config.langDirectory%"
         },
         "okLangHints.poDirectory": {
           "type": "string",
           "default": "i18n",
-          "description": "gettext PO 目录（相对于工作区根目录），按 <locale>/LC_MESSAGES/*.po 结构扫描；文件名（domain）作为 lang 模块，msgid 作为 key，msgstr 作为值。"
+          "description": "%config.poDirectory%"
         },
         "okLangHints.enablePoData": {
           "type": "boolean",
           "default": true,
-          "description": "是否启用 gettext PO 数据源（读取 poDirectory 下的 .po 文件，并与 lang JSON 合并）。"
+          "description": "%config.enablePoData%"
         },
         "okLangHints.poDomains": {
           "type": "array",
@@ -132,7 +133,7 @@
           "default": [
             "ocr"
           ],
-          "description": "要加载的 gettext PO domain（文件名，不含 .po 后缀）；仅列出的 domain 会作为 lang 模块。默认只加载 ocr，排除 ok 等 UI 通用文案。"
+          "description": "%config.poDomains%"
         },
         "okLangHints.displayLocale": {
           "type": "string",
@@ -146,12 +147,12 @@
             "ko_KR",
             "es_ES"
           ],
-          "description": "幽灵注释/hover 使用的默认语言；auto = 跟随 VS Code UI 语言。hover 始终显示全部语言。"
+          "description": "%config.displayLocale%"
         },
         "okLangHints.enableInlayHints": {
           "type": "boolean",
           "default": true,
-          "description": "是否启用幽灵注释（在 self.lang.X.Y 后行内显示对应值）。"
+          "description": "%config.enableInlayHints%"
         },
         "okLangHints.featureAliases": {
           "type": "array",
@@ -162,42 +163,42 @@
             "fL",
             "FeatureList"
           ],
-          "description": "FeatureList 模板的可用别名（补全和 hover 均按此识别）。默认支持 fL 与 FeatureList；例如 [\"fL\", \"FeatureList\"]。"
+          "description": "%config.featureAliases%"
         },
         "okLangHints.effectsFile": {
           "type": "string",
           "default": "src/data/effects.py",
-          "description": "技能效果 ID 定义文件（含 EffectType 枚举与 EFFECT_DESCRIPTIONS 的 effects.py，相对于工作区根目录）。用于 EffectType.XXX / effect_id: \"XXX\" 的 hover、补全与幽灵注释。"
+          "description": "%config.effectsFile%"
         },
         "okLangHints.okScriptProjectPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "ok-script 游戏项目根目录（含 src/config.py 的目录），如 `D:/items/project/github_project/ok-end-field`。任务启动面板从该项目的 `src/config.py` 读取任务列表。"
+          "markdownDescription": "%config.okScriptProjectPath%"
         },
         "okLangHints.okScriptPython": {
           "type": "string",
           "default": "",
-          "markdownDescription": "用于运行 ok-script 任务的 Python 解释器路径。留空时自动使用 `<项目路径>/.venv/Scripts/python.exe`（Windows）。"
+          "markdownDescription": "%config.okScriptPython%"
         },
         "okLangHints.characterProjectPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "角色技能管理面板的数据项目根目录。留空时依次使用 `okScriptProjectPath` 和当前工作区。"
+          "markdownDescription": "%config.characterProjectPath%"
         },
         "okLangHints.characterMasterFile": {
           "type": "string",
           "default": "assets/data/characters.json",
-          "description": "角色主表 JSON，相对于角色数据项目根目录。"
+          "description": "%config.characterMasterFile%"
         },
         "okLangHints.characterSkillsDirectory": {
           "type": "string",
           "default": "assets/data/character_skills",
-          "description": "角色技能 JSON 目录，相对于角色数据项目根目录。"
+          "description": "%config.characterSkillsDirectory%"
         },
         "okLangHints.characterLocaleFile": {
           "type": "string",
           "default": "assets/lang/characters.json",
-          "description": "角色名称多语言 JSON，相对于角色数据项目根目录。"
+          "description": "%config.characterLocaleFile%"
         }
       }
     }
