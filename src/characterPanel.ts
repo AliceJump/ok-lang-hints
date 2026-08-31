@@ -247,3 +247,53 @@ export class CharacterManagerPanel implements vscode.Disposable {
     if (CharacterManagerPanel.current === this) CharacterManagerPanel.current = undefined;
   }
 }
+
+/** 侧边栏中的单按钮入口；大面板仍在编辑器区打开。 */
+export class CharacterManagerLauncherViewProvider implements vscode.WebviewViewProvider {
+  static readonly viewType = 'okLangHints.toolbox';
+
+  constructor(private readonly extensionUri: vscode.Uri) {}
+
+  resolveWebviewView(view: vscode.WebviewView): void {
+    view.webview.options = { enableScripts: true };
+    const nonce = getNonce();
+    view.webview.html = `<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'">
+<style>
+  body {
+    margin: 0;
+    padding: 10px 12px;
+    color: var(--vscode-sideBar-foreground);
+    background: var(--vscode-sideBar-background);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size, 13px);
+  }
+  button {
+    width: 100%;
+    border: none;
+    border-radius: 3px;
+    padding: 7px 10px;
+    cursor: pointer;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    font: inherit;
+  }
+  button:hover { background: var(--vscode-button-hoverBackground); }
+</style>
+</head>
+<body>
+  <button id="open">打开角色技能管理面板</button>
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    document.getElementById('open').addEventListener('click', () => vscode.postMessage({ type: 'open' }));
+  </script>
+</body>
+</html>`;
+    view.webview.onDidReceiveMessage((message: { type?: string }) => {
+      if (message.type === 'open') CharacterManagerPanel.show(this.extensionUri);
+    });
+  }
+}

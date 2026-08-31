@@ -89,6 +89,12 @@
           "webviewOptions": {
             "retainContextWhenHidden": true
           }
+        },
+        {
+          "type": "webview",
+          "id": "okLangHints.toolbox",
+          "name": "工具箱",
+          "icon": "media/toolbox.svg"
         }
       ]
     },

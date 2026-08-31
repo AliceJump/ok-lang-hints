@@ -16,7 +16,7 @@ import {
   repaintAllGalleries,
 } from './templatePanel';
 import { TaskLauncherViewProvider } from './taskLauncher';
-import { CharacterManagerPanel } from './characterPanel';
+import { CharacterManagerLauncherViewProvider, CharacterManagerPanel } from './characterPanel';
 
 export function activate(context: vscode.ExtensionContext): void {
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -208,6 +208,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(
       TaskLauncherViewProvider.viewType,
       taskLauncher,
+    ),
+    vscode.window.registerWebviewViewProvider(
+      CharacterManagerLauncherViewProvider.viewType,
+      new CharacterManagerLauncherViewProvider(context.extensionUri),
     ),
     vscode.commands.registerCommand('okLangHints.showTemplates', () => {
       // 聚焦活动栏中的模板视图（左侧图标 Tab）
