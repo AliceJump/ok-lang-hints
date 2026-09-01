@@ -284,6 +284,10 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
       switch (msg.type) {
         case 'ready':
           await this.refreshTasks(view);
+          // webview 重建后同步当前运行状态，避免切换侧边栏再回来时按钮状态丢失
+          if (this.running && this.currentTask) {
+            void view.webview.postMessage({ type: 'running', task: this.currentTask, running: true });
+          }
           break;
         case 'refresh':
           await this.refreshTasks(view);
