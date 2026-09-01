@@ -153,6 +153,11 @@ button.secondary:hover:not(:disabled) { background: var(--vscode-button-secondar
 
 .task-card__actions button { white-space: nowrap; }
 .task-card__stop { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
+.task-card__stop:not(:disabled) {
+  color: #fff;
+  background: var(--vscode-errorForeground, #f44);
+}
+.task-card__stop:not(:disabled):hover { background: #d33; }
 
 .task-card__footer {
   display: flex;
