@@ -213,6 +213,7 @@
     "watch": "tsc -watch -p ./",
     "version:sync": "node scripts/release/sync-version.js",
     "verify:version": "node scripts/release/verify-version.js",
+    "release": "node scripts/release/release.js",
     "test": "npm run verify:version && npm run compile && npm run test:task-launcher",
     "test:task-launcher": "node scripts/test_task_launcher_subconfigs.js",
     "vscode:prepublish": "npm run compile",
