@@ -438,7 +438,40 @@ function renderCharacterDetail(character) {
       enhancementHead.append(name, enhancementActions); block.appendChild(enhancementHead);
       if (enhancement.triggerText) block.appendChild(element('div', 'enhancement-trigger', enhancement.triggerText));
       if (enhancement.enhancementEffect) block.appendChild(element('div', 'item-sub', enhancement.enhancementEffect));
-      for (const [label, refs, mode] of [[t('triggerEffects'), enhancement.triggerEffects, enhancement.triggerEffectMode], [t('outputEffects'), enhancement.effects, null]]) { const line = element('div', 'effect-line'); const chips = element('div', 'chips'); appendEffectChips(chips, refs); const labelNode = element('div', 'line-label', label); if (mode) { const badgeClass = mode === 'any' ? 'effect-mode-badge mode-any' : 'effect-mode-badge mode-all'; const badge = element('span', badgeClass, mode === 'any' ? 'ANY' : 'ALL'); badge.title = mode === 'any' ? t('triggerEffectModeAnyHint') : t('triggerEffectModeAllHint'); labelNode.appendChild(badge); } line.append(labelNode, chips); block.appendChild(line); }
+      const anySvg = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 3v4"/><path d="M8 7l4 4 4-4"/><path d="M6 14l6 5 6-5" opacity=".5"/><circle cx="12" cy="20" r="1.5" fill="currentColor" stroke="none"/></svg>';
+      const allSvg = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M9 8l-4 4 4 4"/><path d="M15 8l4 4-4 4"/><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>';
+      for (const [label, refs, mode] of [[t('triggerEffects'), enhancement.triggerEffects, enhancement.triggerEffectMode], [t('outputEffects'), enhancement.effects, null]]) {
+        if (mode) {
+          if (refs.length <= 1) {
+            const line = element('div', 'effect-line');
+            const chips = element('div', 'chips');
+            if (refs.length === 1) appendEffectChips(chips, refs);
+            else chips.textContent = `(${t('noTriggerEffects')})`;
+            line.append(element('div', 'line-label', label), chips);
+            block.appendChild(line);
+          } else {
+            const wrap = element('div', `trigger-mode-wrap mode-${mode}`);
+            wrap.title = mode === 'any' ? t('triggerEffectModeAnyHint') : t('triggerEffectModeAllHint');
+            const iconCol = element('div', 'trigger-mode-icon');
+            iconCol.innerHTML = mode === 'any' ? anySvg : allSvg;
+            const lbl = element('div', 'trigger-mode-label', mode === 'any' ? 'ANY' : 'ALL');
+            iconCol.appendChild(lbl);
+            const body = element('div', 'trigger-mode-body');
+            const chips = element('div', 'chips');
+            appendEffectChips(chips, refs);
+            body.appendChild(element('div', 'line-label', label));
+            body.appendChild(chips);
+            wrap.append(iconCol, body);
+            block.appendChild(wrap);
+          }
+        } else {
+          const line = element('div', 'effect-line');
+          const chips = element('div', 'chips');
+          appendEffectChips(chips, refs);
+          line.append(element('div', 'line-label', label), chips);
+          block.appendChild(line);
+        }
+      }
       body.appendChild(block);
     }
     body.appendChild(button(`＋ ${t('addEnhancement')}`, 'action-button action-add compact add-enhancement-action', () => showEnhancementEditor(character, skill, null, -1)));

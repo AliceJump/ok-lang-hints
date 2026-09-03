@@ -290,27 +290,64 @@ input::placeholder, textarea::placeholder { color: var(--vscode-input-placeholde
 .kv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 5px 12px; margin: 7px 0; font-size: 11px; }
 .kv-key { color: var(--muted); margin-right: 5px; }
 .effect-line { margin-top: 7px; }
-.line-label { color: var(--muted); font-size: 11px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
-.effect-mode-badge {
-  display: inline-flex;
+.line-label { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+.trigger-mode-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  margin-top: 6px;
+  border: 1px solid;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.trigger-mode-wrap.mode-any {
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 6%, transparent);
+}
+.trigger-mode-wrap.mode-all {
+  border-color: color-mix(in srgb, var(--info) 45%, transparent);
+  background: color-mix(in srgb, var(--info) 6%, transparent);
+}
+.trigger-mode-icon {
+  flex: 0 0 38px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 10px;
+  justify-content: center;
+  padding: 8px 0;
+  position: relative;
+}
+.trigger-mode-wrap.mode-any .trigger-mode-icon {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
+}
+.trigger-mode-wrap.mode-all .trigger-mode-icon {
+  background: color-mix(in srgb, var(--info) 12%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--info) 30%, transparent);
+}
+.trigger-mode-icon svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.trigger-mode-wrap.mode-any .trigger-mode-icon svg { stroke: var(--warning); }
+.trigger-mode-wrap.mode-all .trigger-mode-icon svg { stroke: var(--info); }
+.trigger-mode-label {
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: .5px;
-  line-height: 16px;
+  letter-spacing: .8px;
   text-transform: uppercase;
+  margin-top: 3px;
 }
-.effect-mode-badge.mode-any {
-  background: color-mix(in srgb, var(--warning) 22%, transparent);
-  color: var(--warning);
-  border: 1px solid color-mix(in srgb, var(--warning) 50%, transparent);
+.trigger-mode-wrap.mode-any .trigger-mode-label { color: var(--warning); }
+.trigger-mode-wrap.mode-all .trigger-mode-label { color: var(--info); }
+.trigger-mode-body {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
 }
-.effect-mode-badge.mode-all {
-  background: color-mix(in srgb, var(--info) 22%, transparent);
-  color: var(--info);
-  border: 1px solid color-mix(in srgb, var(--info) 50%, transparent);
+.trigger-mode-body .line-label {
+  margin-bottom: 0;
 }
 .enhancement {
   border-left: 3px solid var(--accent);
