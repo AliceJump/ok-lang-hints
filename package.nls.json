@@ -6,10 +6,13 @@
   "command.openTemplatesEditor": "Open Template Gallery in Editor",
   "command.showTaskLauncher": "Open Task Launcher",
   "command.openCharacterManager": "Open Character & Skill Manager",
+  "command.openTemplateAssets": "Open Template Assets",
+  "command.openAnnotationEditor": "Open Annotation Editor",
   "viewContainer.title": "ok-script Tools",
   "view.templateGallery": "Template Gallery",
   "view.taskLauncher": "Task Launcher",
   "view.toolbox": "Toolbox",
+  "view.templateAssets": "Template Assets",
   "configuration.title": "ok-script Lang Hints",
   "config.langDirectory": "Language JSON directory relative to the workspace root.",
   "config.poDirectory": "gettext PO directory relative to the workspace root, using <locale>/LC_MESSAGES/*.po.",
@@ -25,5 +28,6 @@
   "config.characterMasterFile": "Character master JSON relative to the character project root.",
   "config.characterSkillsDirectory": "Character skill JSON directory relative to the character project root.",
   "config.characterLocaleFile": "Character name localization JSON relative to the character project root.",
-  "config.characterAvatarTemplateRegex": "Regular expression for avatar template names. The first capture group is used when present; otherwise the text after the matched prefix is compared with the character's English slug. Defaults to battleicon/battle_icon/battle-icon prefixes."
+  "config.characterAvatarTemplateRegex": "Regular expression for avatar template names. The first capture group is used when present; otherwise the text after the matched prefix is compared with the character's English slug. Defaults to battleicon/battle_icon/battle-icon prefixes.",
+  "config.okTemplatesDirectory": "ok_templates folder name relative to the workspace root. Used by the template asset manager."
 }

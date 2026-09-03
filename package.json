@@ -60,6 +60,16 @@
         "command": "okLangHints.openCharacterManager",
         "title": "%command.openCharacterManager%",
         "category": "%command.category%"
+      },
+      {
+        "command": "okLangHints.openTemplateAssets",
+        "title": "%command.openTemplateAssets%",
+        "category": "%command.category%"
+      },
+      {
+        "command": "okLangHints.openAnnotationEditor",
+        "title": "%command.openAnnotationEditor%",
+        "category": "%command.category%"
       }
     ],
     "viewsContainers": {
@@ -96,6 +106,15 @@
           "id": "okLangHints.toolbox",
           "name": "%view.toolbox%",
           "icon": "media/icons/toolbox.svg"
+        },
+        {
+          "type": "webview",
+          "id": "okLangHints.templateAssets",
+          "name": "%view.templateAssets%",
+          "icon": "media/icons/templates.svg",
+          "webviewOptions": {
+            "retainContextWhenHidden": true
+          }
         }
       ]
     },
@@ -204,6 +223,11 @@
           "type": "string",
           "default": "^battle[_-]?icon[_-]?",
           "description": "%config.characterAvatarTemplateRegex%"
+        },
+        "okLangHints.okTemplatesDirectory": {
+          "type": "string",
+          "default": "ok_templates",
+          "description": "%config.okTemplatesDirectory%"
         }
       }
     }

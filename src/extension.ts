@@ -17,6 +17,12 @@ import {
 } from './templatePanel';
 import { TaskLauncherViewProvider } from './taskLauncher';
 import { CharacterManagerLauncherViewProvider, CharacterManagerPanel } from './characterPanel';
+import { TemplateAssetData } from './templateAssetData';
+import {
+  TemplateAssetViewProvider,
+  TemplateAssetPanel,
+  repaintAllAssetGalleries,
+} from './templateAssetPanel';
 
 export function activate(context: vscode.ExtensionContext): void {
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -162,6 +168,9 @@ export function activate(context: vscode.ExtensionContext): void {
     features,
     thumbDir,
   };
+
+  // 模板素材数据管理
+  const templateAssetData = new TemplateAssetData(folder);
   context.subscriptions.push(taskLauncher);
 
   context.subscriptions.push(
@@ -219,6 +228,10 @@ export function activate(context: vscode.ExtensionContext): void {
       CharacterManagerLauncherViewProvider.viewType,
       new CharacterManagerLauncherViewProvider(characterManagerDependencies),
     ),
+    vscode.window.registerWebviewViewProvider(
+      TemplateAssetViewProvider.viewType,
+      new TemplateAssetViewProvider(templateAssetData, thumbDir),
+    ),
     vscode.commands.registerCommand('okLangHints.showTemplates', () => {
       // 聚焦活动栏中的模板视图（左侧图标 Tab）
       void vscode.commands.executeCommand(`${TemplateGalleryViewProvider.viewType}.focus`);
@@ -232,6 +245,13 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('okLangHints.openCharacterManager', () => {
       CharacterManagerPanel.show(characterManagerDependencies);
+    }),
+    vscode.commands.registerCommand('okLangHints.openTemplateAssets', () => {
+      TemplateAssetPanel.show(templateAssetData, thumbDir);
+    }),
+    vscode.commands.registerCommand('okLangHints.openAnnotationEditor', () => {
+      // 打开当前选中的图片，或者提示用户先选择
+      void vscode.window.showInformationMessage('Please click an image in the Template Assets panel to open the annotation editor.');
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('okLangHints')) {
