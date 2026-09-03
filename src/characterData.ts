@@ -36,6 +36,7 @@ export interface CharacterEffectRef {
 export interface CharacterEnhancementView {
   name: string;
   triggerText: string;
+  triggerEffectMode: 'all' | 'any';
   triggerEffects: CharacterEffectRef[];
   effects: CharacterEffectRef[];
   enhancementEffect: string;
@@ -514,12 +515,22 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
           const triggerRaw = rawEnhancement['trigger_condition'];
           let triggerText = '';
           let triggerIds: string[] = [];
+          let triggerEffectMode: 'all' | 'any' = 'all';
           if (typeof triggerRaw === 'string') {
             triggerText = triggerRaw;
           } else if (isObject(triggerRaw)) {
             triggerText = stringValue(triggerRaw['text']);
-            if (Array.isArray(triggerRaw['effects'])) {
-              triggerIds = triggerRaw['effects'].map(effectIdFromUnknown).filter(Boolean);
+            const rawTriggerEffects = triggerRaw['effects'];
+            if (Array.isArray(rawTriggerEffects)) {
+              triggerIds = rawTriggerEffects.map(effectIdFromUnknown).filter(Boolean);
+            } else if (isObject(rawTriggerEffects)) {
+              if (Array.isArray(rawTriggerEffects['all'])) {
+                triggerIds = rawTriggerEffects['all'].map(effectIdFromUnknown).filter(Boolean);
+                triggerEffectMode = 'all';
+              } else if (Array.isArray(rawTriggerEffects['any'])) {
+                triggerIds = rawTriggerEffects['any'].map(effectIdFromUnknown).filter(Boolean);
+                triggerEffectMode = 'any';
+              }
             }
           }
           let inferred = false;
@@ -536,6 +547,7 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
           enhancements.push({
             name: enhancementName,
             triggerText,
+            triggerEffectMode,
             triggerEffects,
             effects: enhancementEffects,
             enhancementEffect: stringValue(rawEnhancement['enhancement_effect']),

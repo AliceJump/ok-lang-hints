@@ -237,16 +237,22 @@ function showSkillEditor(character, skill) {
 
 function showEnhancementEditor(character, skill, enhancement, index) {
   const editing = !!enhancement;
-  const value = enhancement || { name: '', triggerText: '', triggerEffects: [], effects: [], enhancementEffect: '', visiblePulse: false };
+  const value = enhancement || { name: '', triggerText: '', triggerEffectMode: 'all', triggerEffects: [], effects: [], enhancementEffect: '', visiblePulse: false };
   showModal(editing ? t('modifyEnhancement') : t('addEnhancement'), (form) => {
-    const controls = { name: inputControl(value.name), triggerText: textareaControl(value.triggerText), enhancementEffect: textareaControl(value.enhancementEffect), triggerEffects: createEffectEditor(value.triggerEffects, true), effects: createEffectEditor(value.effects, false), visiblePulse: document.createElement('input') };
+    const controls = { name: inputControl(value.name), triggerText: textareaControl(value.triggerText), triggerEffectMode: selectControl(value.triggerEffectMode || 'all', ['all', 'any']), enhancementEffect: textareaControl(value.enhancementEffect), triggerEffects: createEffectEditor(value.triggerEffects, true), effects: createEffectEditor(value.effects, false), visiblePulse: document.createElement('input') };
     controls.visiblePulse.type = 'checkbox';
     controls.visiblePulse.checked = value.visiblePulse === true;
     const check = element('label', 'form-check');
     check.append(controls.visiblePulse, element('span', '', t('visiblePulse')));
-    form.append(formField(t('enhancementName'), controls.name), formField(t('visibleMarker'), check), formField(t('triggerText'), controls.triggerText, true), formField(t('enhancementDescription'), controls.enhancementEffect, true), formField(t('triggerEffectsMulti'), controls.triggerEffects.element, true), formField(t('outputEffectsMulti'), controls.effects.element, true));
+    const modeRow = element('div', 'form-field');
+    const modeLabel = element('label', '', t('triggerEffectMode'));
+    modeLabel.appendChild(controls.triggerEffectMode);
+    const modeHint = element('span', 'item-sub', controls.triggerEffectMode.value === 'any' ? t('triggerEffectModeAnyHint') : t('triggerEffectModeAllHint'));
+    controls.triggerEffectMode.addEventListener('change', () => { modeHint.textContent = controls.triggerEffectMode.value === 'any' ? t('triggerEffectModeAnyHint') : t('triggerEffectModeAllHint'); });
+    modeRow.append(modeLabel, modeHint);
+    form.append(formField(t('enhancementName'), controls.name), formField(t('visibleMarker'), check), formField(t('triggerText'), controls.triggerText, true), formField(t('enhancementDescription'), controls.enhancementEffect, true), modeRow, formField(t('triggerEffectsMulti'), controls.triggerEffects.element, true), formField(t('outputEffectsMulti'), controls.effects.element, true));
     return controls;
-  }, (controls) => mutate({ action: editing ? 'updateEnhancement' : 'addEnhancement', characterId: character.characterId, skillId: skill.skillId, enhancementIndex: editing ? index : undefined, data: { name: controls.name.value, triggerText: controls.triggerText.value, enhancementEffect: controls.enhancementEffect.value, triggerEffects: controls.triggerEffects.getValue(), effects: controls.effects.getValue(), visiblePulse: controls.visiblePulse.checked } }), editing ? t('modify') : t('add'));
+  }, (controls) => mutate({ action: editing ? 'updateEnhancement' : 'addEnhancement', characterId: character.characterId, skillId: skill.skillId, enhancementIndex: editing ? index : undefined, data: { name: controls.name.value, triggerText: controls.triggerText.value, triggerEffectMode: controls.triggerEffectMode.value, enhancementEffect: controls.enhancementEffect.value, triggerEffects: controls.triggerEffects.getValue(), effects: controls.effects.getValue(), visiblePulse: controls.visiblePulse.checked } }), editing ? t('modify') : t('add'));
 }
 function showEffectCategoryEditor() {
   showModal(t('addEffectCategory'), (form) => { const controls = { category: inputControl('') }; form.appendChild(formField(t('categoryName'), controls.category, true)); return controls; }, (controls) => mutateEffect({ action: 'addCategory', data: { category: controls.category.value } }), t('add'));
@@ -432,7 +438,7 @@ function renderCharacterDetail(character) {
       enhancementHead.append(name, enhancementActions); block.appendChild(enhancementHead);
       if (enhancement.triggerText) block.appendChild(element('div', 'enhancement-trigger', enhancement.triggerText));
       if (enhancement.enhancementEffect) block.appendChild(element('div', 'item-sub', enhancement.enhancementEffect));
-      for (const [label, refs] of [[t('triggerEffects'), enhancement.triggerEffects], [t('outputEffects'), enhancement.effects]]) { const line = element('div', 'effect-line'); const chips = element('div', 'chips'); appendEffectChips(chips, refs); line.append(element('div', 'line-label', label), chips); block.appendChild(line); }
+      for (const [label, refs, mode] of [[t('triggerEffects'), enhancement.triggerEffects, enhancement.triggerEffectMode], [t('outputEffects'), enhancement.effects, null]]) { const line = element('div', 'effect-line'); const chips = element('div', 'chips'); appendEffectChips(chips, refs); const labelNode = element('div', 'line-label', label); if (mode) { const badge = element('span', 'effect-mode-badge', mode === 'any' ? 'ANY' : 'ALL'); badge.title = mode === 'any' ? t('triggerEffectModeAnyHint') : t('triggerEffectModeAllHint'); labelNode.appendChild(badge); } line.append(labelNode, chips); block.appendChild(line); }
       body.appendChild(block);
     }
     body.appendChild(button(`＋ ${t('addEnhancement')}`, 'action-button action-add compact add-enhancement-action', () => showEnhancementEditor(character, skill, null, -1)));

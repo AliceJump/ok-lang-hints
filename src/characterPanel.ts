@@ -313,12 +313,13 @@ export class CharacterManagerPanel implements vscode.Disposable {
     if (!isObject(data)) throw new Error(tr('Invalid enhancement data format'));
     const triggerEffects = effectArray(data.triggerEffects, tr('Trigger dependency effects'))
       .map((item) => typeof item === 'string' ? item : String((item as JsonObject).effect_id));
+    const triggerEffectMode = data.triggerEffectMode === 'any' ? 'any' : 'all';
     return {
       ...existing,
       name: requiredString(data.name, tr('Enhancement name')),
       trigger_condition: {
         text: optionalString(data.triggerText),
-        effects: triggerEffects,
+        effects: { [triggerEffectMode]: triggerEffects },
       },
       enhancement_effect: optionalString(data.enhancementEffect),
       enhancement_visible_pulse: data.visiblePulse === true,
