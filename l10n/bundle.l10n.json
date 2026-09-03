@@ -130,5 +130,6 @@
   "Size": "Size",
   "Source": "Source",
   "At runtime, fix_match_regex translates this pattern using ocr.po before calling re.compile.": "At runtime, fix_match_regex translates this pattern using ocr.po before calling re.compile.",
-  "{count} keys": "{count} keys"
+  "{count} keys": "{count} keys",
+  "Please click an image in the Template Assets panel to open the annotation editor.": "Please click an image in the Template Assets panel to open the annotation editor."
 }
