@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src __CSP_SOURCE__; script-src __CSP_SOURCE__ 'nonce-__CSP_NONCE__'; img-src data: __CSP_SOURCE__ vscode-resource:">
+<link rel="stylesheet" href="__STYLE_URI__">
+</head>
+<body>
+  <div class="toolbar">
+    <button id="drawBtn">Draw (R)</button>
+    <button id="deleteBtn">Delete (D)</button>
+    <div class="spacer"></div>
+    <span class="info" id="navInfo"></span>
+    <button id="prevBtn" title="Previous image">◀</button>
+    <button id="nextBtn" title="Next image">▶</button>
+  </div>
+  <div class="canvas-wrap">
+    <canvas id="canvas"></canvas>
+    <div class="empty" id="emptyMsg"></div>
+  </div>
+  <div class="color-bar">
+    <div class="color-swatch" id="swatch"></div>
+    <span id="colorInfo"></span>
+  </div>
+
+  <!-- BBox input dialog -->
+  <div class="modal-overlay" id="bboxModal">
+    <div class="modal">
+      <h3 id="bboxTitle">Bounding Box</h3>
+      <div class="row">
+        <label id="bboxCatLabel">Category:</label>
+        <input type="text" id="bboxCat" placeholder="Category name" />
+      </div>
+      <div class="error" id="bboxError"></div>
+      <div class="row"><label>X:</label><input type="number" id="bboxX" min="0" /></div>
+      <div class="row"><label>Y:</label><input type="number" id="bboxY" min="0" /></div>
+      <div class="row"><label id="bboxWLabel">Width:</label><input type="number" id="bboxW" min="1" /></div>
+      <div class="row"><label id="bboxHLabel">Height:</label><input type="number" id="bboxH" min="1" /></div>
+      <div class="actions">
+        <button id="bboxCancel">Cancel</button>
+        <button id="bboxOk" class="primary">OK</button>
+      </div>
+    </div>
+  </div>
+  <div id="annotationPanelI18n" hidden>__I18N_JSON__</div>
+  <script src="__APP_SCRIPT_URI__"></script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+  :root { --thumb-h: 96px; }
+  body {
+    color: var(--vscode-editor-foreground);
+    background: var(--vscode-editor-background);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size, 13px);
+    margin: 0;
+    padding: 10px 12px 20px;
+  }
+  .toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 0;
+    background: var(--vscode-editor-background);
+  }
+  #search {
+    flex: 1;
+    min-width: 120px;
+    padding: 4px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--vscode-input-border, transparent);
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    outline: none;
+  }
+  #search:focus { border-color: var(--vscode-focusBorder); }
+  #count { opacity: .75; font-size: 11px; white-space: nowrap; }
+  .hint { opacity: .6; font-size: 11px; width: 100%; }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .card {
+    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,.25));
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    background: var(--vscode-editorWidget-background, rgba(128,128,128,.08));
+    transition: transform .08s ease, border-color .08s ease;
+    user-select: none;
+  }
+  .card:hover { transform: translateY(-2px); border-color: var(--vscode-focusBorder); }
+  .thumb-box {
+    height: var(--thumb-h);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    background:
+      repeating-conic-gradient(rgba(128,128,128,.14) 0% 25%, transparent 0% 50%) 0 0/16px 16px;
+  }
+  .thumb-box img {
+    max-width: 100%;
+    max-height: 100%;
+    image-rendering: pixelated;
+  }
+  .open-btn {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    background: rgba(0,0,0,.55);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 22px;
+    text-align: center;
+    padding: 0;
+    opacity: 0;
+    transition: opacity .12s ease;
+    z-index: 2;
+  }
+  .thumb-box:hover .open-btn { opacity: 1; }
+  .open-btn:hover { background: rgba(0,0,0,.8); }
+  .placeholder { opacity: .35; font-size: 11px; }
+  .meta { padding: 5px 7px 6px; }
+  .name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+  }
+  .size { opacity: .65; font-size: 11px; }
+  .empty {
+    margin-top: 32px;
+    text-align: center;
+    opacity: .6;
+    line-height: 1.8;
+    white-space: pre-line;
+    padding: 0 12px;
+  }

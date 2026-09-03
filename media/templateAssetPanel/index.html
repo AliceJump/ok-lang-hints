@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src __CSP_SOURCE__; script-src __CSP_SOURCE__ 'nonce-__CSP_NONCE__'; img-src data: __CSP_SOURCE__ vscode-resource:">
+<link rel="stylesheet" href="__STYLE_URI__">
+</head>
+<body>
+  <div class="toolbar">
+    <button class="primary" id="importBtn">Import</button>
+    <button id="screenshotBtn">Screenshot</button>
+    <button id="saveBtn">Save to Assets</button>
+    <div class="spacer"></div>
+    <input id="search" type="text" />
+    <span id="count"></span>
+  </div>
+  <div id="grid"></div>
+  <div id="empty" class="empty" style="display:none"></div>
+  <div id="assetPanelI18n" hidden>__I18N_JSON__</div>
+  <script src="__APP_SCRIPT_URI__"></script>
+</body>
+</html>

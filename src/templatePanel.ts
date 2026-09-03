@@ -1,8 +1,10 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { FeatureData } from './featureData';
 import { cropTemplateThumbFile, openAnnotatedImage } from './pngCrop';
 import { featureAliases } from './providers';
-import { tr, webviewStrings } from './localization';
+import { injectWebviewLocalization, tr } from './localization';
 
 /** 发送给 webview 的模板元数据（不含图片） */
 interface TemplateMeta {
@@ -77,6 +79,7 @@ class GalleryController {
     /** 缩略图 PNG 落盘目录（globalStorage），webview 经 asWebviewUri 访问 */
     private readonly thumbDir: string,
     private readonly isVisible: () => boolean,
+    private readonly extensionUri: vscode.Uri,
   ) {
     liveControllers.add(this);
     this.disposables.push(
@@ -88,7 +91,7 @@ class GalleryController {
 
   /** 设置 HTML；webview 就绪后其脚本会发 ready 触发首次加载 */
   attachHtml(): void {
-    this.webview.html = galleryHtml(this.webview.cspSource);
+    this.webview.html = galleryHtml(this.webview, this.webview.cspSource, this.extensionUri);
   }
 
   /** 收集全部模板并推送元数据 + 分批推送缩略图（本地文件 URI） */
@@ -211,6 +214,7 @@ export class TemplateGalleryViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'okLangHints.templateGallery';
 
   constructor(
+    private readonly extensionUri: vscode.Uri,
     private readonly features: FeatureData,
     private readonly thumbDir: string,
   ) {}
@@ -218,14 +222,15 @@ export class TemplateGalleryViewProvider implements vscode.WebviewViewProvider {
   resolveWebviewView(view: vscode.WebviewView): void {
     view.webview.options = {
       enableScripts: true,
-      // 必须放行缩略图目录（globalStorage），否则 asWebviewUri 加载会被拒绝
-      localResourceRoots: [vscode.Uri.file(this.thumbDir)],
+      // 必须放行缩略图目录（globalStorage）和扩展 media 目录，否则 asWebviewUri 加载会被拒绝
+      localResourceRoots: [vscode.Uri.file(this.thumbDir), this.extensionUri],
     };
     const controller = new GalleryController(
       view.webview,
       this.features,
       this.thumbDir,
       () => view.visible,
+      this.extensionUri,
     );
     controller.attachHtml();
 
@@ -244,7 +249,7 @@ export class TemplateGalleryPanel {
   static current: TemplateGalleryPanel | undefined;
 
   /** 打开或聚焦编辑器版模板面板；已打开时刷新内容 */
-  static show(features: FeatureData, thumbDir: string): void {
+  static show(features: FeatureData, thumbDir: string, extensionUri: vscode.Uri): void {
     if (TemplateGalleryPanel.current) {
       TemplateGalleryPanel.current.panel.reveal();
       void TemplateGalleryPanel.current.controller.update();
@@ -257,11 +262,11 @@ export class TemplateGalleryPanel {
       {
         enableScripts: true,
         retainContextWhenHidden: false,
-        // 必须放行缩略图目录（globalStorage），否则 asWebviewUri 加载会被拒绝
-        localResourceRoots: [vscode.Uri.file(thumbDir)],
+        // 必须放行缩略图目录（globalStorage）和扩展 media 目录，否则 asWebviewUri 加载会被拒绝
+        localResourceRoots: [vscode.Uri.file(thumbDir), extensionUri],
       },
     );
-    const controller = new GalleryController(panel.webview, features, thumbDir, () => panel.visible);
+    const controller = new GalleryController(panel.webview, features, thumbDir, () => panel.visible, extensionUri);
     TemplateGalleryPanel.current = new TemplateGalleryPanel(panel, controller);
   }
 
@@ -292,301 +297,17 @@ function getNonce(): string {
   return text;
 }
 
-function galleryHtml(cspSource: string): string {
+function galleryHtml(webview: vscode.Webview, cspSource: string, extensionUri: vscode.Uri): string {
+  const file = path.join(extensionUri.fsPath, 'media', 'templatePanel', 'index.html');
   const nonce = getNonce();
-  const strings = JSON.stringify(webviewStrings()).replace(/</g, '\\u003c');
-  const csp = [
-    "default-src 'none'",
-    `img-src data: ${cspSource}`,
-    `script-src ${cspSource} 'nonce-${nonce}'`,
-    "style-src 'unsafe-inline'",
-  ].join('; ');
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="${csp}">
-<style>
-  :root { --thumb-h: 96px; }
-  body {
-    color: var(--vscode-editor-foreground);
-    background: var(--vscode-editor-background);
-    font-family: var(--vscode-font-family);
-    font-size: var(--vscode-font-size, 13px);
-    margin: 0;
-    padding: 10px 12px 20px;
-  }
-  .toolbar {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    padding: 6px 0;
-    background: var(--vscode-editor-background);
-  }
-  #search {
-    flex: 1;
-    min-width: 120px;
-    padding: 4px 8px;
-    border-radius: 3px;
-    border: 1px solid var(--vscode-input-border, transparent);
-    background: var(--vscode-input-background);
-    color: var(--vscode-input-foreground);
-    outline: none;
-  }
-  #search:focus { border-color: var(--vscode-focusBorder); }
-  #count { opacity: .75; font-size: 11px; white-space: nowrap; }
-  .hint { opacity: .6; font-size: 11px; width: 100%; }
-  #grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
-    gap: 8px;
-    margin-top: 4px;
-  }
-  .card {
-    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,.25));
-    border-radius: 6px;
-    overflow: hidden;
-    cursor: pointer;
-    background: var(--vscode-editorWidget-background, rgba(128,128,128,.08));
-    transition: transform .08s ease, border-color .08s ease;
-    user-select: none;
-  }
-  .card:hover { transform: translateY(-2px); border-color: var(--vscode-focusBorder); }
-  .thumb-box {
-    height: var(--thumb-h);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    background:
-      repeating-conic-gradient(rgba(128,128,128,.14) 0% 25%, transparent 0% 50%) 0 0/16px 16px;
-  }
-  .thumb-box img {
-    max-width: 100%;
-    max-height: 100%;
-    image-rendering: pixelated;
-  }
-  .open-btn {
-    position: absolute;
-    top: 3px;
-    right: 3px;
-    width: 22px;
-    height: 22px;
-    border-radius: 4px;
-    background: rgba(0,0,0,.55);
-    color: #fff;
-    border: none;
-    cursor: pointer;
-    font-size: 13px;
-    line-height: 22px;
-    text-align: center;
-    padding: 0;
-    opacity: 0;
-    transition: opacity .12s ease;
-    z-index: 2;
-  }
-  .thumb-box:hover .open-btn { opacity: 1; }
-  .open-btn:hover { background: rgba(0,0,0,.8); }
-  .placeholder { opacity: .35; font-size: 11px; }
-  .meta { padding: 5px 7px 6px; }
-  .name {
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 2px;
-  }
-  .size { opacity: .65; font-size: 11px; }
-  .empty {
-    margin-top: 32px;
-    text-align: center;
-    opacity: .6;
-    line-height: 1.8;
-    white-space: pre-line;
-    padding: 0 12px;
-  }
-</style>
-</head>
-<body>
-  <div class="toolbar">
-    <input id="search" type="text" />
-    <span id="count"></span>
-    <span class="hint"></span>
-  </div>
-  <div id="grid"></div>
-  <div id="empty" class="empty" style="display:none"></div>
-<script nonce="${nonce}">
-  const I18N = ${strings};
-  const t = (key, args = {}) => (I18N[key] || key).replace(/\{(\w+)\}/g, (_, name) => String(args[name] ?? '{' + name + '}'));
-  const vscode = acquireVsCodeApi();
-  const grid = document.getElementById('grid');
-  const search = document.getElementById('search');
-  const countEl = document.getElementById('count');
-  const emptyEl = document.getElementById('empty');
-  const cards = new Map(); // name -> card element
-  let metas = [];
-  let loadedCount = 0;
-  let failedCount = 0;
-  document.documentElement.lang = navigator.language || 'en';
-  document.title = t('templatesTitle');
-  search.placeholder = t('templatesSearch');
-  document.querySelector('.hint').textContent = t('templatesHint');
-
-  function updateCount() {
-    const base = t('templatesCount', { shown: shownCount(), total: metas.length });
-    const stat = (loadedCount || failedCount)
-      ? ' · ' + (failedCount
-        ? t('thumbnailStatsWithFailures', { loaded: loadedCount, failed: failedCount })
-        : t('thumbnailStats', { loaded: loadedCount }))
-      : '';
-    countEl.textContent = base + stat;
-  }
-
-  function shownCount() {
-    let n = 0;
-    for (const card of cards.values()) if (card.style.display !== 'none') n++;
-    return n;
-  }
-
-  function makeCard(meta) {
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.dataset.name = meta.name;
-    card.title = meta.name + '\\n' + t('templateSize', { width: meta.width, height: meta.height }) +
-      '\\nbbox: [' + meta.bbox.join(', ') + ']\\n' + t('templateSource', { path: meta.imagePath });
-
-    const box = document.createElement('div');
-    box.className = 'thumb-box';
-    const ph = document.createElement('span');
-    ph.className = 'placeholder';
-    ph.textContent = '…';
-    box.appendChild(ph);
-
-    // 缩略图右上角"查看原图"按钮（悬停显示，不干扰卡片点击）
-    const openBtn = document.createElement('button');
-    openBtn.className = 'open-btn';
-    openBtn.textContent = '👁';
-    openBtn.title = t('viewOriginal');
-    openBtn.addEventListener('click', (e) => {
-      e.stopPropagation(); // 不触发卡片的 click
-      vscode.postMessage({
-        type: 'open',
-        imagePath: meta.imagePath,
-        name: meta.name,
-        bbox: JSON.stringify(meta.bbox),
-      });
-    });
-    box.appendChild(openBtn);
-
-    const m = document.createElement('div');
-    m.className = 'meta';
-    const nm = document.createElement('div');
-    nm.className = 'name';
-    nm.textContent = meta.name;
-    nm.title = meta.name;
-    const sz = document.createElement('div');
-    sz.className = 'size';
-    sz.textContent = meta.width + '×' + meta.height;
-    m.appendChild(nm);
-    m.appendChild(sz);
-
-    card.appendChild(box);
-    card.appendChild(m);
-
-    // 单击卡片 → 插入代码；双击卡片 → 复制
-    // 使用 e.detail 区分：第二次点击（detail=2）时跳过，由 dblclick 处理
-    card.addEventListener('click', (e) => {
-      if (e.detail >= 2) return; // 双击序列中的第二次点击，跳过（由 dblclick 处理）
-      vscode.postMessage({ type: 'insert', text: meta.name });
-    });
-    card.addEventListener('dblclick', () => {
-      vscode.postMessage({ type: 'copy', text: meta.name });
-    });
-    return card;
-  }
-
-  function applyFilter() {
-    const q = search.value.trim().toLowerCase();
-    let shown = 0;
-    for (const [name, card] of cards) {
-      const ok = !q || name.toLowerCase().includes(q);
-      card.style.display = ok ? '' : 'none';
-      if (ok) shown++;
-    }
-    updateCount();
-    emptyEl.style.display = 'none';
-    emptyEl.textContent = '';
-    if (metas.length === 0) {
-      emptyEl.style.display = '';
-      emptyEl.textContent = t('noTemplatesWithHint');
-    } else if (shown === 0) {
-      emptyEl.style.display = '';
-      emptyEl.textContent = t('noTemplateMatch', { query: search.value.trim() });
-    }
-  }
-
-  search.addEventListener('input', applyFilter);
-
-  /** 给卡片挂上缩略图；成功/失败都会更新计数 */
-  function attachThumb(name, url) {
-    const card = cards.get(name);
-    if (!card || card.dataset.thumbDone === '1') return;
-    card.dataset.thumbDone = '1';
-    const img = document.createElement('img');
-    img.src = url;
-    img.alt = name;
-    // 用内联样式隐藏（内联优先级高于样式表，onload 时才能可靠切回显示）
-    img.style.display = 'none';
-    img.addEventListener('load', () => {
-      loadedCount++;
-      const ph = card.querySelector('.placeholder');
-      if (ph) ph.remove();
-      img.style.display = 'block';
-      updateCount();
-    });
-    img.addEventListener('error', () => {
-      failedCount++;
-      const ph = card.querySelector('.placeholder');
-      if (ph) { ph.textContent = t('loadFailed'); ph.style.opacity = '.8'; }
-      // 把失败的 URI 记到卡片 tooltip，便于诊断（如 localResourceRoots 未放行）
-      card.title += '\\n[' + t('thumbnailLoadFailed') + '] ' + url;
-      updateCount();
-    });
-    card.querySelector('.thumb-box').appendChild(img);
-  }
-
-  window.addEventListener('message', (e) => {
-    const msg = e.data;
-    switch (msg.type) {
-      case 'templates': {
-        grid.innerHTML = '';
-        cards.clear();
-        metas = msg.templates || [];
-        loadedCount = 0;
-        failedCount = 0;
-        for (const meta of metas) {
-          const card = makeCard(meta);
-          cards.set(meta.name, card);
-          grid.appendChild(card);
-        }
-        applyFilter();
-        break;
-      }
-      case 'thumbs': {
-        for (const it of (msg.items || [])) attachThumb(it.name, it.url);
-        break;
-      }
-      default:
-        break;
-    }
-  });
-
-  vscode.postMessage({ type: 'ready' });
-</script>
-</body>
-</html>`;
+  const resource = (name: string) => webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, 'media', 'templatePanel', name),
+  ).toString(true);
+  return injectWebviewLocalization(
+    fs.readFileSync(file, 'utf-8')
+      .split('__CSP_NONCE__').join(nonce)
+      .split('__CSP_SOURCE__').join(webview.cspSource)
+      .split('__STYLE_URI__').join(resource('style.css'))
+      .split('__APP_SCRIPT_URI__').join(resource('app.js')),
+  );
 }

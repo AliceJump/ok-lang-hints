@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { LangData, poDirectorySetting } from './langData';
+import { tr } from './localization';
 import { FeatureData } from './featureData';
 import { EffectData } from './effectData';
 import { clearCropCache, clearThumbDir, warmCropCache } from './pngCrop';
@@ -218,7 +219,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.window.registerWebviewViewProvider(
       TemplateGalleryViewProvider.viewType,
-      new TemplateGalleryViewProvider(features, thumbDir),
+      new TemplateGalleryViewProvider(context.extensionUri, features, thumbDir),
     ),
     vscode.window.registerWebviewViewProvider(
       TaskLauncherViewProvider.viewType,
@@ -230,14 +231,14 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.window.registerWebviewViewProvider(
       TemplateAssetViewProvider.viewType,
-      new TemplateAssetViewProvider(templateAssetData, thumbDir),
+      new TemplateAssetViewProvider(templateAssetData, thumbDir, context.extensionUri),
     ),
     vscode.commands.registerCommand('okLangHints.showTemplates', () => {
       // 聚焦活动栏中的模板视图（左侧图标 Tab）
       void vscode.commands.executeCommand(`${TemplateGalleryViewProvider.viewType}.focus`);
     }),
     vscode.commands.registerCommand('okLangHints.openTemplatesEditor', () => {
-      TemplateGalleryPanel.show(features, thumbDir);
+      TemplateGalleryPanel.show(features, thumbDir, context.extensionUri);
     }),
     vscode.commands.registerCommand('okLangHints.showTaskLauncher', () => {
       // 聚焦活动栏中的任务启动视图
@@ -247,11 +248,11 @@ export function activate(context: vscode.ExtensionContext): void {
       CharacterManagerPanel.show(characterManagerDependencies);
     }),
     vscode.commands.registerCommand('okLangHints.openTemplateAssets', () => {
-      TemplateAssetPanel.show(templateAssetData, thumbDir);
+      TemplateAssetPanel.show(templateAssetData, thumbDir, context.extensionUri);
     }),
     vscode.commands.registerCommand('okLangHints.openAnnotationEditor', () => {
       // 打开当前选中的图片，或者提示用户先选择
-      void vscode.window.showInformationMessage('Please click an image in the Template Assets panel to open the annotation editor.');
+      void vscode.window.showInformationMessage(tr('Please click an image in the Template Assets panel to open the annotation editor.'));
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('okLangHints')) {

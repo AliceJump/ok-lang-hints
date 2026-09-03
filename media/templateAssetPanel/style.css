@@ -1,0 +1,81 @@
+  :root { --thumb-h: 96px; }
+  body {
+    color: var(--vscode-editor-foreground);
+    background: var(--vscode-editor-background);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size, 13px);
+    margin: 0; padding: 10px 12px 20px;
+  }
+  .toolbar {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding: 6px 0;
+    background: var(--vscode-editor-background);
+  }
+  .toolbar button {
+    padding: 4px 10px; border-radius: 3px;
+    border: 1px solid var(--vscode-button-secondaryBackground, rgba(128,128,128,.3));
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    cursor: pointer; font-size: 12px; white-space: nowrap;
+  }
+  .toolbar button:hover { background: var(--vscode-button-secondaryHoverBackground); }
+  .toolbar button.primary {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border-color: var(--vscode-button-background);
+  }
+  .toolbar button.primary:hover { opacity: .9; }
+  #search {
+    flex: 1; min-width: 120px; padding: 4px 8px; border-radius: 3px;
+    border: 1px solid var(--vscode-input-border, transparent);
+    background: var(--vscode-input-background); color: var(--vscode-input-foreground);
+    outline: none; font-size: 12px;
+  }
+  #search:focus { border-color: var(--vscode-focusBorder); }
+  #count { opacity: .75; font-size: 11px; white-space: nowrap; }
+  .spacer { flex: 1; }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 8px; margin-top: 8px;
+  }
+  .card {
+    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,.25));
+    border-radius: 6px; overflow: hidden; cursor: pointer;
+    background: var(--vscode-editorWidget-background, rgba(128,128,128,.08));
+    transition: transform .08s ease, border-color .08s ease;
+    user-select: none;
+  }
+  .card:hover { transform: translateY(-2px); border-color: var(--vscode-focusBorder); }
+  .thumb-box {
+    height: var(--thumb-h);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    background: repeating-conic-gradient(rgba(128,128,128,.14) 0% 25%, transparent 0% 50%) 0 0/16px 16px;
+  }
+  .thumb-box img { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
+  .placeholder { opacity: .35; font-size: 11px; }
+  .meta { padding: 5px 7px 6px; }
+  .name {
+    font-weight: 600; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; margin-bottom: 2px; font-size: 11px;
+  }
+  .cats { opacity: .65; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .size { opacity: .5; font-size: 10px; }
+  .actions {
+    position: absolute; bottom: 3px; right: 3px;
+    display: flex; gap: 2px; opacity: 0; transition: opacity .12s ease; z-index: 2;
+  }
+  .card:hover .actions { opacity: 1; }
+  .actions button {
+    width: 22px; height: 22px; border-radius: 4px;
+    background: rgba(0,0,0,.6); color: #fff; border: none;
+    cursor: pointer; font-size: 12px; line-height: 22px;
+    text-align: center; padding: 0;
+  }
+  .actions button:hover { background: rgba(0,0,0,.85); }
+  .empty {
+    margin-top: 32px; text-align: center; opacity: .6;
+    line-height: 1.8; white-space: pre-line; padding: 0 12px;
+  }
