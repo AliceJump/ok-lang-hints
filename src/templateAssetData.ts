@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { cropTemplateThumbFile } from './pngCrop';
 
 /* ---------------- COCO 数据类型 ---------------- */
 
@@ -273,22 +274,85 @@ export class TemplateAssetData {
     const targetImagesDir = path.join(targetFolder, 'images');
     if (!fs.existsSync(targetImagesDir)) fs.mkdirSync(targetImagesDir, { recursive: true });
 
-    // Copy images (cropping done externally via Python script if needed)
+    // 裁剪模式：对每张图片的每个标注区域进行裁剪，保存为独立文件
+    const newImages: CocoImage[] = [];
+    const newAnnotations: CocoAnnotation[] = [];
+    let nextImageId = 1;
+    let nextAnnId = 1;
+
     for (const img of this.cocoData.images) {
       const src = path.join(this.templateFolder, img.file_name);
-      const dst = path.join(targetImagesDir, img.file_name);
-      if (fs.existsSync(src)) {
+      if (!fs.existsSync(src)) continue;
+
+      const annotations = this.cocoData.annotations.filter((a) => a.image_id === img.id);
+      if (annotations.length === 0) {
+        // 无标注的图片：直接复制原图
+        const dst = path.join(targetImagesDir, img.file_name);
         fs.copyFileSync(src, dst);
+        newImages.push({ ...img, id: nextImageId++ });
+        continue;
+      }
+
+      // 有标注：逐个裁剪标注区域为独立图片
+      for (const ann of annotations) {
+        const [bx, by, bw, bh] = ann.bbox;
+        const cropBbox: [number, number, number, number] = [
+          Math.round(bx), Math.round(by), Math.round(bw), Math.round(bh),
+        ];
+        // 用 pngCrop 的裁剪函数生成缩略图文件（targetHeight=0 表示保持原始尺寸比例）
+        const cropFile = cropTemplateThumbFile(src, cropBbox, targetImagesDir, 0);
+        if (!cropFile) continue;
+
+        const baseName = path.basename(img.file_name, path.extname(img.file_name));
+        const cropFileName = `${baseName}_${cropBbox[0]}_${cropBbox[1]}_${cropBbox[2]}_${cropBbox[3]}.png`;
+        const cropDst = path.join(targetImagesDir, cropFileName);
+        // cropTemplateThumbFile 已写入文件，重命名为带坐标的名字
+        if (cropFile !== cropDst) {
+          try {
+            if (fs.existsSync(cropDst)) fs.unlinkSync(cropDst);
+            fs.renameSync(cropFile, cropDst);
+          } catch {
+            // rename 失败则复制
+            try { fs.copyFileSync(cropFile, cropDst); } catch { continue; }
+          }
+        }
+
+        const newImgId = nextImageId++;
+        newImages.push({
+          id: newImgId,
+          file_name: cropFileName,
+          width: Math.round(bw),
+          height: Math.round(bh),
+        });
+        newAnnotations.push({
+          id: nextAnnId++,
+          image_id: newImgId,
+          category_id: ann.category_id,
+          bbox: [0, 0, Math.round(bw), Math.round(bh)],
+          area: Math.round(bw) * Math.round(bh),
+          iscrowd: 0,
+        });
       }
     }
 
-    // Write COCO JSON
+    // 构建裁剪后的 COCO 数据
+    const croppedCoco: CocoData = {
+      images: newImages,
+      annotations: newAnnotations,
+      categories: [...this.cocoData.categories],
+    };
+
+    // 清理无引用的分类
+    const usedCatIds = new Set(newAnnotations.map((a) => a.category_id));
+    croppedCoco.categories = croppedCoco.categories.filter((c) => usedCatIds.has(c.id));
+
+    // 写入 COCO JSON
     const cocoTarget = path.join(targetFolder, COCO_JSON);
-    fs.writeFileSync(cocoTarget, JSON.stringify(this.cocoData, null, 2), 'utf-8');
+    fs.writeFileSync(cocoTarget, JSON.stringify(croppedCoco, null, 2), 'utf-8');
 
     // Generate label enum if requested
     if (generateEnum) {
-      const labels = this.cocoData.categories.map(c => c.name).sort();
+      const labels = croppedCoco.categories.map(c => c.name).sort();
       const enumFile = enumPath || path.join(targetFolder, 'LabelEnum.py');
       this.generateLabelEnum(enumFile, labels);
     }

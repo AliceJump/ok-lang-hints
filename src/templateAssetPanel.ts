@@ -7,6 +7,82 @@ import { AnnotationPanel } from './annotationPanel';
 import { cropTemplateThumbFile } from './pngCrop';
 import { tr, webviewStrings } from './localization';
 
+/** 窗口配置（从项目 config.py 的 windows 子字典提取） */
+interface WindowConfig {
+  exe?: string[];
+  title?: string;
+  hwnd_class?: string;
+  top_hwnd_class?: string;
+}
+
+/** probe_window_config.py 返回结构 */
+interface ProbeWindowConfigResult {
+  ok: boolean;
+  error?: string;
+  config_path?: string;
+  exe?: string[];
+  title?: string;
+  hwnd_class?: string;
+  top_hwnd_class?: string;
+}
+
+/** 读取项目 config.py 的窗口匹配配置（通过 Python AST 解析，不导入模块）。 */
+async function probeWindowConfig(projectDir: string, pythonPath: string): Promise<WindowConfig | undefined> {
+  const scriptPath = path.join(path.dirname(__dirname), 'python', 'probe_window_config.py');
+  if (!fs.existsSync(scriptPath)) return undefined;
+  try {
+    const result = await new Promise<string>((resolve, reject) => {
+      execFile(pythonPath, [scriptPath, projectDir], {
+        timeout: 10000,
+        encoding: 'utf-8',
+        windowsHide: true,
+        maxBuffer: 4 * 1024 * 1024,
+      }, (error, stdout, stderr) => {
+        if (error) reject(new Error(stderr?.trim() || error.message));
+        else resolve(stdout || '');
+      });
+    });
+    // 取最后一行 JSON
+    const lines = result.split('\n').filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const parsed = JSON.parse(lines[i]) as ProbeWindowConfigResult;
+        if (parsed.ok) {
+          return {
+            exe: parsed.exe,
+            title: parsed.title,
+            hwnd_class: parsed.hwnd_class,
+            top_hwnd_class: parsed.top_hwnd_class,
+          };
+        }
+        return undefined;
+      } catch { /* 跳过非 JSON 行 */ }
+    }
+  } catch { /* Python 不可用或脚本失败 */ }
+  return undefined;
+}
+
+/** 读取 okLangHints 扩展配置中的项目路径和 Python 解释器 */
+function getProjectConfig(): { projectDir: string; pythonPath: string } {
+  const cfg = vscode.workspace.getConfiguration('okLangHints');
+  let projectDir = cfg.get<string>('okScriptProjectPath') || '';
+  projectDir = projectDir.replace(/^~/, process.env.USERPROFILE || '');
+  projectDir = projectDir.replace(/[\\/]+$/, '');
+  if (!projectDir) {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    if (root && (fs.existsSync(path.join(root, 'src', 'config.py')) || fs.existsSync(path.join(root, 'config.py')))) {
+      projectDir = root;
+    }
+  }
+  const python = cfg.get<string>('okScriptPython') || '';
+  let pythonPath = python;
+  if (!pythonPath) {
+    const venvPy = path.join(projectDir, '.venv', 'Scripts', 'python.exe');
+    pythonPath = fs.existsSync(venvPy) ? venvPy : 'python';
+  }
+  return { projectDir, pythonPath };
+}
+
 /* ---------------- 控制器 ---------------- */
 
 const liveControllers = new Set<AssetGalleryController>();
@@ -135,12 +211,37 @@ class AssetGalleryController {
       return;
     }
 
-    // Ask user for window title pattern
-    const titlePattern = await vscode.window.showInputBox({
-      prompt: tr('Enter game window title pattern (regex), or leave empty for all windows'),
-      placeHolder: 'e.g. EndField|Unity',
-    });
-    if (titlePattern === undefined) return; // user cancelled
+    const { projectDir, pythonPath } = getProjectConfig();
+    let windowConfig: WindowConfig | undefined;
+
+    // 从项目 config.py 自动读取窗口匹配信息
+    if (projectDir) {
+      windowConfig = await probeWindowConfig(projectDir, pythonPath);
+    }
+
+    let titleRegex: string | undefined;
+    let exeNames: string[] | undefined;
+    let hwndClass: string | undefined;
+
+    if (windowConfig && (windowConfig.exe || windowConfig.title || windowConfig.hwnd_class)) {
+      // 自动读取成功，直接使用 config 中的窗口信息
+      exeNames = windowConfig.exe;
+      titleRegex = windowConfig.title;
+      hwndClass = windowConfig.hwnd_class;
+      const desc = [
+        exeNames ? `exe: ${exeNames.join(', ')}` : '',
+        titleRegex ? `title: ${titleRegex}` : '',
+        hwndClass ? `class: ${hwndClass}` : '',
+      ].filter(Boolean).join(' | ');
+      void vscode.window.showInformationMessage(tr('Auto-detected window config: {config}', { config: desc }));
+    } else {
+      // 回退：让用户手动输入窗口标题正则
+      titleRegex = await vscode.window.showInputBox({
+        prompt: tr('Enter game window title pattern (regex), or leave empty for all windows'),
+        placeHolder: 'e.g. EndField|Unity',
+      });
+      if (titleRegex === undefined) return; // user cancelled
+    }
 
     const outputDir = path.join(folder.uri.fsPath, 'ok_templates');
     if (!fs.existsSync(outputDir)) {
@@ -152,28 +253,44 @@ class AssetGalleryController {
     const ts = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
     const outputPath = path.join(outputDir, `screenshot_${ts}.png`);
 
-    // Find the Python script
+    // Find the capture script
     const scriptPath = path.join(folder.uri.fsPath, 'scripts', 'capture_game_window.py');
-    if (!fs.existsSync(scriptPath)) {
-      // Try extension's scripts directory
+    let captureScript: string | undefined;
+    if (fs.existsSync(scriptPath)) {
+      captureScript = scriptPath;
+    } else {
       const extScriptsDir = path.join(path.dirname(__dirname), 'scripts');
       const extScriptPath = path.join(extScriptsDir, 'capture_game_window.py');
       if (fs.existsSync(extScriptPath)) {
-        return this.captureWithScript(extScriptPath, outputPath, titlePattern);
+        captureScript = extScriptPath;
       }
+    }
+    if (!captureScript) {
       void vscode.window.showErrorMessage(tr('Screenshot script not found. Please place capture_game_window.py in scripts/ directory.'));
       return;
     }
 
-    return this.captureWithScript(scriptPath, outputPath, titlePattern);
+    // 构建传递给 capture 脚本的窗口配置 JSON
+    const windowConfigJson = (exeNames || hwndClass || titleRegex)
+      ? JSON.stringify({ exe: exeNames, title: titleRegex, hwnd_class: hwndClass })
+      : undefined;
+
+    return this.captureWithScript(captureScript, outputPath, titleRegex, windowConfigJson);
   }
 
-  private captureWithScript(scriptPath: string, outputPath: string, titlePattern: string): Promise<void> {
+  private captureWithScript(scriptPath: string, outputPath: string, titlePattern: string | undefined, configJson?: string): Promise<void> {
     return new Promise<void>((resolve) => {
-      const args = [scriptPath, outputPath];
-      if (titlePattern) args.push(titlePattern);
+      const args: string[] = [scriptPath, outputPath];
+      if (configJson) {
+        // 使用 --config-json 传递窗口配置
+        args.push('--config-json', configJson);
+      } else if (titlePattern) {
+        // 兼容旧模式：直接传正则
+        args.push(titlePattern);
+      }
 
-      execFile('python', args, { timeout: 10000 }, async (error, stdout, stderr) => {
+      const { pythonPath } = getProjectConfig();
+      execFile(pythonPath, args, { timeout: 10000 }, async (error, stdout, stderr) => {
         if (error) {
           void vscode.window.showErrorMessage(tr('Screenshot failed: {error}', { error: error.message }));
           resolve();

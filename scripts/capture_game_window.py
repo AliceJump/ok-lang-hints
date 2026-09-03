@@ -1,12 +1,14 @@
 """
 Capture game window screenshot using BitBlt.
 Usage: python capture_game_window.py <output_path> [window_title_regex]
+       python capture_game_window.py <output_path> --exe-names Endfield.exe --hwnd-class UnityWndClass
 """
 import sys
 import os
 import re
 import ctypes
 import ctypes.wintypes
+import json
 from ctypes import windll, byref, sizeof, c_long
 
 # Constants
@@ -30,6 +32,17 @@ def get_client_rect(hwnd):
     return rect
 
 
+def get_exe_by_hwnd(hwnd):
+    """Get the executable name and path for a window."""
+    try:
+        import psutil
+        _, pid = windll.user32.GetWindowThreadProcessId(hwnd, None)
+        proc = psutil.Process(pid)
+        return proc.name(), proc.exe()
+    except Exception:
+        return None, None
+
+
 def enum_windows_callback(hwnd, results):
     """Callback for EnumWindows."""
     if not windll.user32.IsWindowVisible(hwnd):
@@ -40,24 +53,83 @@ def enum_windows_callback(hwnd, results):
     buf = ctypes.create_unicode_buffer(length + 1)
     windll.user32.GetWindowTextW(hwnd, buf, length + 1)
     title = buf.value
-    results.append((hwnd, title))
+    class_name_buf = ctypes.create_unicode_buffer(256)
+    windll.user32.GetClassNameW(hwnd, class_name_buf, 256)
+    class_name = class_name_buf.value
+    exe_name, exe_path = get_exe_by_hwnd(hwnd)
+    results.append((hwnd, title, class_name, exe_name, exe_path))
     return True
 
 
-def find_game_window(title_regex=None):
-    """Find a game window matching the title regex."""
+def find_game_window(title_regex=None, exe_names=None, hwnd_class=None):
+    """Find a game window matching the criteria.
+    
+    Args:
+        title_regex: Regex pattern to match window title
+        exe_names: List of executable names to match
+        hwnd_class: Window class name to match
+    """
     results = []
     WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.wintypes.BOOL, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
     windll.user32.EnumWindows(WNDENUMPROC(enum_windows_callback), 0)
     
-    if title_regex:
-        pattern = re.compile(title_regex, re.IGNORECASE)
-        for hwnd, title in results:
-            if pattern.search(title):
-                return hwnd, title
+    # Parse exe_names
+    if isinstance(exe_names, str):
+        exe_names = [exe_names]
     
-    # Return all visible windows if no match
-    return results
+    # Parse hwnd_class
+    hwnd_class_pattern = None
+    if hwnd_class:
+        hwnd_class_pattern = re.compile(hwnd_class, re.IGNORECASE)
+    
+    # Parse title regex
+    title_pattern = None
+    if title_regex:
+        title_pattern = re.compile(title_regex, re.IGNORECASE)
+    
+    matched = []
+    for hwnd, title, cls_name, exe_name, exe_path in results:
+        # Check exe name
+        if exe_names:
+            exe_match = False
+            for en in exe_names:
+                if exe_name and en.lower() in exe_name.lower():
+                    exe_match = True
+                    break
+                if exe_path and en.lower() in exe_path.lower():
+                    exe_match = True
+                    break
+            if not exe_match:
+                continue
+        
+        # Check window class
+        if hwnd_class_pattern and not hwnd_class_pattern.search(cls_name):
+            continue
+        
+        # Check title
+        if title_pattern and not title_pattern.search(title):
+            continue
+        
+        matched.append((hwnd, title, cls_name, exe_name, exe_path))
+    
+    if matched:
+        # Pick the biggest window
+        best = None
+        best_area = 0
+        for hwnd, title, cls_name, exe_name, exe_path in matched:
+            left, top, width, height = get_window_bounds(hwnd)
+            area = width * height
+            if area > best_area:
+                best_area = area
+                best = (hwnd, title)
+        if best:
+            return best
+    
+    # Return first match if no biggest found
+    if matched:
+        return (matched[0][0], matched[0][1])
+    
+    return None
 
 
 def capture_window_by_bitblt(hwnd, output_path):
@@ -188,24 +260,40 @@ def capture_window_by_bitblt(hwnd, output_path):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("Usage: python capture_game_window.py <output_path> [window_title_regex]")
-        sys.exit(1)
+    import argparse
     
-    output_path = sys.argv[1]
-    title_regex = sys.argv[2] if len(sys.argv) > 2 else None
+    parser = argparse.ArgumentParser(description='Capture game window screenshot')
+    parser.add_argument('output_path', help='Output image path')
+    parser.add_argument('title_regex', nargs='?', default=None, help='Window title regex (legacy)')
+    parser.add_argument('--exe-names', nargs='+', default=None, help='Executable names to match')
+    parser.add_argument('--hwnd-class', default=None, help='Window class name regex')
+    parser.add_argument('--config-json', default=None, help='JSON string with window config from probe_window_config')
     
-    result = find_game_window(title_regex)
+    args = parser.parse_args()
+    
+    title_regex = args.title_regex
+    exe_names = args.exe_names
+    hwnd_class = args.hwnd_class
+    
+    # Parse config JSON if provided
+    if args.config_json:
+        try:
+            config = json.loads(args.config_json)
+            if not title_regex and config.get('title'):
+                title_regex = config['title']
+            if not exe_names and config.get('exe'):
+                exe_names = config['exe']
+            if not hwnd_class and config.get('hwnd_class'):
+                hwnd_class = config['hwnd_class']
+        except json.JSONDecodeError:
+            pass
+    
+    result = find_game_window(title_regex, exe_names, hwnd_class)
     if isinstance(result, tuple):
         hwnd, title = result
         print(f"Found window: {title} (hwnd={hwnd})")
-        capture_window_by_bitblt(hwnd, output_path)
-        print(f"Saved to: {output_path}")
-    elif isinstance(result, list):
-        print("Available windows:")
-        for hwnd, title in result[:20]:
-            print(f"  {hwnd}: {title}")
-        sys.exit(1)
+        capture_window_by_bitblt(hwnd, args.output_path)
+        print(f"Saved to: {args.output_path}")
     else:
-        print("No game window found")
+        print("No game window found matching the criteria")
         sys.exit(1)
