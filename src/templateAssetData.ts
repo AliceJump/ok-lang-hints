@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { cropTemplateThumbFile } from './pngCrop';
+import { decodeRgba, encodePng } from './pngCrop';
 
 /* ---------------- COCO 数据类型 ---------------- */
 
@@ -268,74 +268,188 @@ export class TemplateAssetData {
     }
   }
 
-  /* ---------- 保存到项目assets（裁剪+枚举） ---------- */
+  /* ---------- 保存到项目assets（bin-packing + 枚举） ---------- */
 
+  /**
+   * 将 ok_templates 中的图片+标注导出到项目 assets 目录。
+   *
+   * 对齐 ok-script FeatureSet.compress_coco() 语义：
+   * - 无标注图片：直接复制原图。
+   * - 有标注图片：按原始 (width × height) 分组，同尺寸原图的互不重叠 bbox 打包到
+   *   同一张白色 Canvas（原坐标粘贴），重叠 bbox 分到不同 page。
+   * - COCO annotation bbox 保持原始坐标不变。
+   * - 生成的 COCO image file_name 指向打包后的 PNG。
+   */
   saveToAssets(targetFolder: string, generateEnum = false, enumPath?: string): void {
     const targetImagesDir = path.join(targetFolder, 'images');
+
+    // 清空目标目录中的旧图片（重新生成前清理）
+    if (fs.existsSync(targetImagesDir)) {
+      for (const f of fs.readdirSync(targetImagesDir)) {
+        try { fs.unlinkSync(path.join(targetImagesDir, f)); } catch { /* ignore */ }
+      }
+    }
     if (!fs.existsSync(targetImagesDir)) fs.mkdirSync(targetImagesDir, { recursive: true });
 
-    // 裁剪模式：对每张图片的每个标注区域进行裁剪，保存为独立文件
     const newImages: CocoImage[] = [];
     const newAnnotations: CocoAnnotation[] = [];
     let nextImageId = 1;
     let nextAnnId = 1;
 
+    // ── 1. 只处理有标注的图片（无标注的原图不放入 assets） ──
+    const annotatedImages: CocoImage[] = [];
+
     for (const img of this.cocoData.images) {
-      const src = path.join(this.templateFolder, img.file_name);
-      if (!fs.existsSync(src)) continue;
-
-      const annotations = this.cocoData.annotations.filter((a) => a.image_id === img.id);
-      if (annotations.length === 0) {
-        // 无标注的图片：直接复制原图
-        const dst = path.join(targetImagesDir, img.file_name);
-        fs.copyFileSync(src, dst);
-        newImages.push({ ...img, id: nextImageId++ });
-        continue;
-      }
-
-      // 有标注：逐个裁剪标注区域为独立图片
-      for (const ann of annotations) {
-        const [bx, by, bw, bh] = ann.bbox;
-        const cropBbox: [number, number, number, number] = [
-          Math.round(bx), Math.round(by), Math.round(bw), Math.round(bh),
-        ];
-        // 用 pngCrop 的裁剪函数生成缩略图文件（targetHeight=0 表示保持原始尺寸比例）
-        const cropFile = cropTemplateThumbFile(src, cropBbox, targetImagesDir, 0);
-        if (!cropFile) continue;
-
-        const baseName = path.basename(img.file_name, path.extname(img.file_name));
-        const cropFileName = `${baseName}_${cropBbox[0]}_${cropBbox[1]}_${cropBbox[2]}_${cropBbox[3]}.png`;
-        const cropDst = path.join(targetImagesDir, cropFileName);
-        // cropTemplateThumbFile 已写入文件，重命名为带坐标的名字
-        if (cropFile !== cropDst) {
-          try {
-            if (fs.existsSync(cropDst)) fs.unlinkSync(cropDst);
-            fs.renameSync(cropFile, cropDst);
-          } catch {
-            // rename 失败则复制
-            try { fs.copyFileSync(cropFile, cropDst); } catch { continue; }
-          }
-        }
-
-        const newImgId = nextImageId++;
-        newImages.push({
-          id: newImgId,
-          file_name: cropFileName,
-          width: Math.round(bw),
-          height: Math.round(bh),
-        });
-        newAnnotations.push({
-          id: nextAnnId++,
-          image_id: newImgId,
-          category_id: ann.category_id,
-          bbox: [0, 0, Math.round(bw), Math.round(bh)],
-          area: Math.round(bw) * Math.round(bh),
-          iscrowd: 0,
-        });
+      const hasAnnotations = this.cocoData.annotations.some((a) => a.image_id === img.id);
+      if (hasAnnotations) {
+        annotatedImages.push(img);
       }
     }
 
-    // 构建裁剪后的 COCO 数据
+    // ── 2. 有标注图片：按原始尺寸分组，bin-packing 到 Canvas ──
+    //    对齐 ok-script compress_coco: 同尺寸原图的互不重叠 bbox 打包到同一张 Canvas。
+    type AnnotatedEntry = { img: CocoImage; ann: CocoAnnotation };
+    const dimGroups = new Map<string, AnnotatedEntry[]>();
+
+    for (const img of annotatedImages) {
+      const src = path.join(this.templateFolder, img.file_name);
+      if (!fs.existsSync(src)) continue;
+
+      // 从原图读取实际宽高（优先使用 COCO 中记录的值，但以实际文件为准）
+      let imgW = img.width;
+      let imgH = img.height;
+      try {
+        const buf = fs.readFileSync(src);
+        const dims = decodeRgba(buf);
+        imgW = dims.width;
+        imgH = dims.height;
+      } catch {
+        // 读取失败则使用 COCO 记录值
+      }
+
+      const annotations = this.cocoData.annotations.filter((a) => a.image_id === img.id);
+      for (const ann of annotations) {
+        const dimKey = `${imgW}×${imgH}`;
+        if (!dimGroups.has(dimKey)) dimGroups.set(dimKey, []);
+        dimGroups.get(dimKey)!.push({ img: { ...img, width: imgW, height: imgH }, ann });
+      }
+    }
+
+    // 每个尺寸组内执行 bin-packing
+    for (const [_dimKey, entries] of dimGroups) {
+      // 从 entries 推导画布尺寸（同组所有 entry 的 img 宽高相同）
+      const W = entries[0].img.width;
+      const H = entries[0].img.height;
+
+      // 构建每张原图的 bbox 区域列表
+      const imgRects = new Map<number, Array<[number, number, number, number]>>();
+      for (const e of entries) {
+        const [bx, by, bw, bh] = e.ann.bbox.map(Math.round) as [number, number, number, number];
+        const rects = imgRects.get(e.img.id) ?? [];
+        rects.push([bx, by, bx + bw, by + bh]); // 存储 [x1,y1,x2,y2] 用于重叠检测
+        imgRects.set(e.img.id, rects);
+      }
+
+      // 所有唯一原图 id
+      const allImgIds = [...new Set(entries.map((e) => e.img.id))];
+
+      // Bin-packing: 将原图分配到 page，互不重叠的原图可共用同一 page
+      const pages: Array<{ imgIds: number[]; occupancy: Array<[number, number, number, number]> }> = [];
+
+      for (const imgId of allImgIds) {
+        const rects = imgRects.get(imgId) ?? [];
+        let assigned = false;
+
+        for (const page of pages) {
+          // 检测该原图的所有 bbox 是否与 page 已有区域冲突
+          let conflict = false;
+          for (const cRect of rects) {
+            for (const pRect of page.occupancy) {
+              if (cRect[0] < pRect[2] && cRect[2] > pRect[0] &&
+                  cRect[1] < pRect[3] && cRect[3] > pRect[1]) {
+                conflict = true;
+                break;
+              }
+            }
+            if (conflict) break;
+          }
+          if (!conflict) {
+            page.imgIds.push(imgId);
+            page.occupancy.push(...rects);
+            assigned = true;
+            break;
+          }
+        }
+
+        if (!assigned) {
+          pages.push({ imgIds: [imgId], occupancy: [...rects] });
+        }
+      }
+
+      // 为每个 page 生成打包 PNG
+      for (const page of pages) {
+        // 白色画布
+        const canvasRgba = Buffer.alloc(W * H * 4, 255); // 全白 (RGBA 255,255,255,255)
+
+        // 从每个原图复制对应 bbox ROI 到 Canvas
+        for (const imgId of page.imgIds) {
+          const srcImg = entries.find((e) => e.img.id === imgId)!.img;
+          const src = path.join(this.templateFolder, srcImg.file_name);
+          try {
+            const buf = fs.readFileSync(src);
+            const srcDecoded = decodeRgba(buf);
+            const srcAnnotations = entries.filter((e) => e.img.id === imgId);
+            for (const e of srcAnnotations) {
+              const [bx, by, bw, bh] = e.ann.bbox.map(Math.round);
+              const x1 = Math.max(0, bx);
+              const y1 = Math.max(0, by);
+              const x2 = Math.min(W, bx + bw);
+              const y2 = Math.min(H, by + bh);
+              if (x2 > x1 && y2 > y1) {
+                for (let y = y1; y < y2; y++) {
+                  const srcStart = (y * srcDecoded.width + x1) * 4;
+                  const dstStart = (y * W + x1) * 4;
+                  srcDecoded.rgba.copy(canvasRgba, dstStart, srcStart, srcStart + (x2 - x1) * 4);
+                }
+              }
+            }
+          } catch {
+            // 源图读取失败，跳过
+          }
+        }
+
+        // 编码并写入打包 PNG
+        const pageFileName = `${nextImageId}.png`;
+        const pagePng = encodePng(W, H, canvasRgba);
+        const pageDst = path.join(targetImagesDir, pageFileName);
+        fs.writeFileSync(pageDst, pagePng);
+
+        const packedImgId = nextImageId++;
+        newImages.push({
+          id: packedImgId,
+          file_name: pageFileName,
+          width: W,
+          height: H,
+        });
+
+        // COCO annotations: 保持原始 bbox 坐标，仅更新 image_id 指向打包图
+        const pageImgIds = new Set(page.imgIds);
+        for (const e of entries) {
+          if (!pageImgIds.has(e.img.id)) continue;
+          const [bx, by, bw, bh] = e.ann.bbox.map(Math.round) as [number, number, number, number];
+          newAnnotations.push({
+            id: nextAnnId++,
+            image_id: packedImgId,
+            category_id: e.ann.category_id,
+            bbox: [bx, by, bw, bh],
+            area: bw * bh,
+            iscrowd: 0,
+          });
+        }
+      }
+    }
+
+    // ── 4. 构建并写入 COCO JSON ──
     const croppedCoco: CocoData = {
       images: newImages,
       annotations: newAnnotations,
@@ -346,7 +460,15 @@ export class TemplateAssetData {
     const usedCatIds = new Set(newAnnotations.map((a) => a.category_id));
     croppedCoco.categories = croppedCoco.categories.filter((c) => usedCatIds.has(c.id));
 
-    // 写入 COCO JSON
+    // 清理旧的 COCO JSON 文件
+    try {
+      for (const f of fs.readdirSync(targetFolder)) {
+        if (f.toLowerCase().endsWith('.json')) {
+          try { fs.unlinkSync(path.join(targetFolder, f)); } catch { /* ignore */ }
+        }
+      }
+    } catch { /* ignore */ }
+
     const cocoTarget = path.join(targetFolder, COCO_JSON);
     fs.writeFileSync(cocoTarget, JSON.stringify(croppedCoco, null, 2), 'utf-8');
 

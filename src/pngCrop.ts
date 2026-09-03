@@ -94,7 +94,7 @@ function paeth(a: number, b: number, c: number): number {
 }
 
 /** 解码 PNG 为 RGBA8 像素（Buffer, w*h*4） */
-function decodeRgba(buf: Buffer): { width: number; height: number; rgba: Buffer } {
+export function decodeRgba(buf: Buffer): { width: number; height: number; rgba: Buffer } {
   const { meta, idat } = parsePng(buf);
   if (meta.bitDepth !== 8) throw new Error(`unsupported bitDepth ${meta.bitDepth}`);
   const { width, height, colorType } = meta;
@@ -160,7 +160,7 @@ function decodeRgba(buf: Buffer): { width: number; height: number; rgba: Buffer 
 }
 
 /** 把 RGBA 像素编码为 PNG Buffer（8bit RGBA, filter 0） */
-function encodePng(width: number, height: number, rgba: Buffer): Buffer {
+export function encodePng(width: number, height: number, rgba: Buffer): Buffer {
   const stride = width * 4;
   const raw = Buffer.alloc((stride + 1) * height);
   for (let y = 0; y < height; y++) {
@@ -320,6 +320,45 @@ export async function warmCropCache(
 /** 模板标注/图片变化时清空裁剪缓存。 */
 export function clearCropCache(): void {
   CROP_CACHE.clear();
+}
+
+/* ---------------- 原始分辨率裁剪落盘（供 saveToAssets bin-packing 使用） ---------------- */
+
+/**
+ * 从原图按 bbox 裁剪（保持原始分辨率，不缩放），将裁剪区域写入指定路径的 PNG 文件。
+ * 用于 saveToAssets 的 bin-packing 流程中单 bbox 直接裁剪场景。
+ * @returns 输出文件绝对路径；失败返回 undefined。
+ */
+export function cropTemplateOriginalFile(
+  imagePath: string,
+  bbox: [number, number, number, number],
+  outDir: string,
+  fileName: string,
+): string | undefined {
+  try {
+    const buf = fs.readFileSync(imagePath);
+    const { width, height, rgba } = decodeRgba(buf);
+    const [bx, by, bw, bh] = bbox;
+    const cx = Math.max(0, Math.min(bx, width));
+    const cy = Math.max(0, Math.min(by, height));
+    const cw = Math.max(1, Math.min(bw, width - cx));
+    const ch = Math.max(1, Math.min(bh, height - cy));
+
+    // 裁剪（不缩放）
+    const cropped = Buffer.alloc(cw * ch * 4);
+    for (let y = 0; y < ch; y++) {
+      const srcStart = ((cy + y) * width + cx) * 4;
+      rgba.copy(cropped, y * cw * 4, srcStart, srcStart + cw * 4);
+    }
+
+    const png = encodePng(cw, ch, cropped);
+    fs.mkdirSync(outDir, { recursive: true });
+    const outPath = path.join(outDir, fileName);
+    fs.writeFileSync(outPath, png);
+    return outPath;
+  } catch {
+    return undefined;
+  }
 }
 
 /* ---------------- 缩略图落盘（供 webview 通过 asWebviewUri 加载） ---------------- */
