@@ -424,10 +424,14 @@ export class TemplateAssetData {
         const pageDst = path.join(targetImagesDir, pageFileName);
         fs.writeFileSync(pageDst, pagePng);
 
+        // file_name = 从 COCO JSON 到打包 PNG 的相对路径（对齐 ok-script compress_coco）
+        // COCO JSON 在 targetFolder/，图片在 targetFolder/images/，所以相对路径固定为 images/{id}.png
+        const finalRelPath = `images/${pageFileName}`;
+
         const packedImgId = nextImageId++;
         newImages.push({
           id: packedImgId,
-          file_name: pageFileName,
+          file_name: finalRelPath,
           width: W,
           height: H,
         });
