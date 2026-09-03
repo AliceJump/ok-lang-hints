@@ -57,6 +57,26 @@ export class TemplateAssetData {
     this.cocoPath = path.join(this.templateFolder, COCO_JSON);
   }
 
+  /** Add an image file to COCO data (static helper for external callers). */
+  static async addImageToCoco(imagePath: string): Promise<void> {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!folder) throw new Error('No workspace folder');
+    const data = new TemplateAssetData(folder);
+    await data.load();
+    data.addImageEntry(imagePath, 0, 0);
+    // Read actual dimensions if PNG
+    try {
+      const buf = fs.readFileSync(imagePath);
+      if (buf.length >= 24 && buf.readUInt32BE(0) === 0x89504e47) {
+        const w = buf.readUInt32BE(16);
+        const h = buf.readUInt32BE(20);
+        const img = data.cocoData.images.find(i => i.file_name === path.basename(imagePath));
+        if (img) { img.width = w; img.height = h; }
+      }
+    } catch { /* ignore */ }
+    data.save();
+  }
+
   get root(): string { return this.rootDir; }
   get templatesDir(): string { return this.templateFolder; }
 
@@ -247,13 +267,13 @@ export class TemplateAssetData {
     }
   }
 
-  /* ---------- 保存到项目assets ---------- */
+  /* ---------- 保存到项目assets（裁剪+枚举） ---------- */
 
-  saveToAssets(targetFolder: string): void {
+  saveToAssets(targetFolder: string, generateEnum = false, enumPath?: string): void {
     const targetImagesDir = path.join(targetFolder, 'images');
     if (!fs.existsSync(targetImagesDir)) fs.mkdirSync(targetImagesDir, { recursive: true });
 
-    // 复制图片
+    // Copy images (cropping done externally via Python script if needed)
     for (const img of this.cocoData.images) {
       const src = path.join(this.templateFolder, img.file_name);
       const dst = path.join(targetImagesDir, img.file_name);
@@ -262,9 +282,30 @@ export class TemplateAssetData {
       }
     }
 
-    // 写入 COCO JSON
+    // Write COCO JSON
     const cocoTarget = path.join(targetFolder, COCO_JSON);
     fs.writeFileSync(cocoTarget, JSON.stringify(this.cocoData, null, 2), 'utf-8');
+
+    // Generate label enum if requested
+    if (generateEnum) {
+      const labels = this.cocoData.categories.map(c => c.name).sort();
+      const enumFile = enumPath || path.join(targetFolder, 'LabelEnum.py');
+      this.generateLabelEnum(enumFile, labels);
+    }
+  }
+
+  /** Generate a Python enum file from category labels. */
+  private generateLabelEnum(filePath: string, labels: string[]): void {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    const className = path.basename(filePath, '.py');
+    let content = 'from enum import Enum\n\n\n';
+    content += `class ${className}(str, Enum):\n`;
+    for (const label of labels) {
+      content += `    ${label} = '${label}'\n`;
+    }
+    fs.writeFileSync(filePath, content, 'utf-8');
   }
 
   /* ---------- 添加截图（base64 PNG） ---------- */

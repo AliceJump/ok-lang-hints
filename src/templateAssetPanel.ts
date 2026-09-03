@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { execFile } from 'child_process';
 import { TemplateAssetData } from './templateAssetData';
 import { AnnotationPanel } from './annotationPanel';
 import { cropTemplateThumbFile } from './pngCrop';
@@ -128,10 +129,73 @@ class AssetGalleryController {
 
   /* ---------- 截图处理 ---------- */
   private async handleScreenshot(): Promise<void> {
-    // VS Code 没有直接的剪贴板图片读取 API，提示用户使用文件导入
-    void vscode.window.showInformationMessage(
-      tr('Use the Import button to add images from files. VS Code does not support direct clipboard image paste.'),
-    );
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!folder) {
+      void vscode.window.showWarningMessage(tr('No workspace folder open.'));
+      return;
+    }
+
+    // Ask user for window title pattern
+    const titlePattern = await vscode.window.showInputBox({
+      prompt: tr('Enter game window title pattern (regex), or leave empty for all windows'),
+      placeHolder: 'e.g. EndField|Unity',
+    });
+    if (titlePattern === undefined) return; // user cancelled
+
+    const outputDir = path.join(folder.uri.fsPath, 'ok_templates');
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    // Generate filename with timestamp
+    const now = new Date();
+    const ts = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+    const outputPath = path.join(outputDir, `screenshot_${ts}.png`);
+
+    // Find the Python script
+    const scriptPath = path.join(folder.uri.fsPath, 'scripts', 'capture_game_window.py');
+    if (!fs.existsSync(scriptPath)) {
+      // Try extension's scripts directory
+      const extScriptsDir = path.join(path.dirname(__dirname), 'scripts');
+      const extScriptPath = path.join(extScriptsDir, 'capture_game_window.py');
+      if (fs.existsSync(extScriptPath)) {
+        return this.captureWithScript(extScriptPath, outputPath, titlePattern);
+      }
+      void vscode.window.showErrorMessage(tr('Screenshot script not found. Please place capture_game_window.py in scripts/ directory.'));
+      return;
+    }
+
+    return this.captureWithScript(scriptPath, outputPath, titlePattern);
+  }
+
+  private captureWithScript(scriptPath: string, outputPath: string, titlePattern: string): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const args = [scriptPath, outputPath];
+      if (titlePattern) args.push(titlePattern);
+
+      execFile('python', args, { timeout: 10000 }, async (error, stdout, stderr) => {
+        if (error) {
+          void vscode.window.showErrorMessage(tr('Screenshot failed: {error}', { error: error.message }));
+          resolve();
+          return;
+        }
+        if (!fs.existsSync(outputPath)) {
+          void vscode.window.showErrorMessage(tr('Screenshot failed: file not created'));
+          resolve();
+          return;
+        }
+
+        // Add to COCO data
+        try {
+          await TemplateAssetData.addImageToCoco(outputPath);
+          void vscode.window.showInformationMessage(tr('Screenshot saved: {name}', { name: path.basename(outputPath) }));
+          await this.update();
+        } catch (e) {
+          void vscode.window.showErrorMessage(tr('Screenshot saved but COCO update failed: {error}', { error: String(e) }));
+        }
+        resolve();
+      });
+    });
   }
 
   /* ---------- 保存到 assets ---------- */
@@ -152,9 +216,19 @@ class AssetGalleryController {
     );
     if (!pick) return;
 
+    // Ask about generating label enum
+    const generateEnum = await vscode.window.showQuickPick(
+      [
+        { label: tr('Yes'), description: tr('Generate LabelEnum.py'), generate: true },
+        { label: tr('No'), description: tr('Skip enum generation'), generate: false },
+      ],
+      { placeHolder: tr('Generate template enum file?') },
+    );
+    if (!generateEnum) return;
+
     try {
       this.data.ensureTemplateFolder();
-      this.data.saveToAssets(pick.target);
+      this.data.saveToAssets(pick.target, generateEnum.generate);
       void vscode.window.showInformationMessage(tr('Saved to: {path}', { path: pick.label }));
     } catch (e) {
       void vscode.window.showErrorMessage(tr('Save failed: {error}', { error: String(e) }));

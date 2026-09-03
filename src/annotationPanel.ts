@@ -441,6 +441,8 @@ function annotationHtml(cspSource: string): string {
   let mode = 'none';
   let drawStart = null;   // widget coords
   let drawPreview = null;  // widget coords
+  let drawDragging = false; // true when mouse is held down in draw mode
+  let clipboard = null;    // copied bbox for Ctrl+C/V
 
   // 拖拽
   let dragging = false;
@@ -628,6 +630,7 @@ function annotationHtml(cspSource: string): string {
     if (mode === 'draw') {
       if (!drawStart) {
         drawStart = { x: px, y: py };
+        drawDragging = true;
       } else {
         finishDraw(px, py);
       }
@@ -750,7 +753,21 @@ function annotationHtml(cspSource: string): string {
     updateColorAt(px, py);
   });
 
-  canvas.addEventListener('mouseup', () => {
+  canvas.addEventListener('mouseup', (e) => {
+    if (mode === 'draw' && drawDragging && drawStart) {
+      const rect = canvas.getBoundingClientRect();
+      const px = e.clientX - rect.left, py = e.clientY - rect.top;
+      const dx = px - drawStart.x, dy = py - drawStart.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 5) {
+        // Dragged far enough: finish as drag-to-draw
+        finishDraw(px, py);
+      }
+      // If barely moved, keep drawStart for click-two-points (second click)
+      drawDragging = false;
+      return;
+    }
+    drawDragging = false;
     if (dragging) { dragging = false; dragStartPos = null; dragOrigRect = null; saveAnnotations(); }
     if (resizing) { resizing = false; resizeStartPos = null; resizeOrigRect = null; resizeHandle = null; saveAnnotations(); }
     if (panning) {
@@ -835,7 +852,7 @@ function annotationHtml(cspSource: string): string {
   /* ---------- 模式切换 ---------- */
   function setMode(m) {
     mode = m;
-    drawStart = null; drawPreview = null;
+    drawStart = null; drawPreview = null; drawDragging = false;
     document.getElementById('drawBtn').classList.toggle('active', m === 'draw');
     document.getElementById('deleteBtn').classList.toggle('active', m === 'delete');
     if (m === 'draw') canvas.style.cursor = 'crosshair';
@@ -926,6 +943,37 @@ function annotationHtml(cspSource: string): string {
   /* ---------- 键盘事件 ---------- */
   document.addEventListener('keydown', (e) => {
     if (document.getElementById('bboxModal').classList.contains('visible')) return;
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (ctrl && (e.key === 'c' || e.key === 'C') && selectedIdx >= 0 && mode === 'none') {
+      // Ctrl+C: copy selected bbox
+      const ann = annotations[selectedIdx];
+      clipboard = { category: ann.category, x: ann.x, y: ann.y, w: ann.w, h: ann.h };
+      return;
+    }
+    if (ctrl && (e.key === 'v' || e.key === 'V') && clipboard && mode === 'none') {
+      // Ctrl+V: paste bbox at same position with offset
+      const offset = 10;
+      const newAnn = {
+        id: nextId++,
+        category: clipboard.category,
+        x: clipboard.x + offset,
+        y: clipboard.y + offset,
+        w: clipboard.w,
+        h: clipboard.h
+      };
+      // Clamp to image bounds
+      if (img) {
+        newAnn.x = Math.min(newAnn.x, img.width - newAnn.w);
+        newAnn.y = Math.min(newAnn.y, img.height - newAnn.h);
+        newAnn.x = Math.max(0, newAnn.x);
+        newAnn.y = Math.max(0, newAnn.y);
+      }
+      annotations.push(newAnn);
+      selectedIdx = annotations.length - 1;
+      saveAnnotations();
+      paint();
+      return;
+    }
     if (e.key === 'r' || e.key === 'R') {
       setMode(mode === 'draw' ? 'none' : 'draw');
     } else if (e.key === 'd' || e.key === 'D') {
