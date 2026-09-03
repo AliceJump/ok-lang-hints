@@ -435,6 +435,9 @@ function assetGalleryHtml(cspSource: string): string {
 
   document.title = t('templateAssetsTitle');
   search.placeholder = t('templatesSearch');
+  document.getElementById('importBtn').textContent = t('assetImport');
+  document.getElementById('screenshotBtn').textContent = t('screenshot');
+  document.getElementById('saveBtn').textContent = t('saveToAssetsTitle');
 
   function updateCount() {
     const shown = shownCount();
@@ -462,21 +465,13 @@ function assetGalleryHtml(cspSource: string): string {
 
     const actDiv = document.createElement('div');
     actDiv.className = 'actions';
-    const annBtn = document.createElement('button');
-    annBtn.textContent = 'Edit';
-    annBtn.title = 'Annotate image';
-    annBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      vscode.postMessage({ type: 'openAnnotation', imagePath: meta.imagePath });
-    });
     const delBtn = document.createElement('button');
     delBtn.textContent = 'X';
-    delBtn.title = 'Delete image';
+    delBtn.title = t('assetDeleteTooltip');
     delBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       vscode.postMessage({ type: 'deleteImage', imagePath: meta.imagePath });
     });
-    actDiv.appendChild(annBtn);
     actDiv.appendChild(delBtn);
     box.appendChild(actDiv);
 
@@ -520,7 +515,7 @@ function assetGalleryHtml(cspSource: string): string {
       emptyEl.textContent = t('noTemplatesWithHint');
     } else if (shown === 0) {
       emptyEl.style.display = '';
-      emptyEl.textContent = 'No matching images for "' + search.value.trim() + '"';
+      emptyEl.textContent = t('assetNoMatch') + ': "' + search.value.trim() + '"';
     }
   }
 

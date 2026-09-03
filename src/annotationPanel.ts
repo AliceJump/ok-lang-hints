@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { TemplateAssetData } from './templateAssetData';
-import { tr } from './localization';
+import { tr, webviewStrings } from './localization';
 
 /* ---------------- 标注数据类型 ---------------- */
 
@@ -227,6 +227,7 @@ function getNonce(): string {
 
 function annotationHtml(cspSource: string): string {
   const nonce = getNonce();
+  const strings = JSON.stringify(webviewStrings()).replace(/</g, '\\u003c');
   const csp = [
     "default-src 'none'",
     `img-src data: ${cspSource} vscode-resource:`,
@@ -363,9 +364,8 @@ function annotationHtml(cspSource: string): string {
 </head>
 <body>
   <div class="toolbar">
-    <button id="drawBtn" title="Draw bbox (R)">Draw (R)</button>
-    <button id="deleteBtn" title="Delete mode (D)">Delete (D)</button>
-    <button id="modifyBtn" title="Edit selected (Double-click)">Modify</button>
+    <button id="drawBtn">Draw (R)</button>
+    <button id="deleteBtn">Delete (D)</button>
     <div class="spacer"></div>
     <span class="info" id="navInfo"></span>
     <button id="prevBtn" title="Previous image">◀</button>
@@ -373,7 +373,7 @@ function annotationHtml(cspSource: string): string {
   </div>
   <div class="canvas-wrap">
     <canvas id="canvas"></canvas>
-    <div class="empty" id="emptyMsg">No image loaded</div>
+    <div class="empty" id="emptyMsg"></div>
   </div>
   <div class="color-bar">
     <div class="color-swatch" id="swatch"></div>
@@ -385,14 +385,14 @@ function annotationHtml(cspSource: string): string {
     <div class="modal">
       <h3 id="bboxTitle">Bounding Box</h3>
       <div class="row">
-        <label>Category:</label>
+        <label id="bboxCatLabel">Category:</label>
         <input type="text" id="bboxCat" placeholder="Category name" />
       </div>
       <div class="error" id="bboxError"></div>
       <div class="row"><label>X:</label><input type="number" id="bboxX" min="0" /></div>
       <div class="row"><label>Y:</label><input type="number" id="bboxY" min="0" /></div>
-      <div class="row"><label>Width:</label><input type="number" id="bboxW" min="1" /></div>
-      <div class="row"><label>Height:</label><input type="number" id="bboxH" min="1" /></div>
+      <div class="row"><label id="bboxWLabel">Width:</label><input type="number" id="bboxW" min="1" /></div>
+      <div class="row"><label id="bboxHLabel">Height:</label><input type="number" id="bboxH" min="1" /></div>
       <div class="actions">
         <button id="bboxCancel">Cancel</button>
         <button id="bboxOk" class="primary">OK</button>
@@ -402,10 +402,27 @@ function annotationHtml(cspSource: string): string {
 
 <script nonce="${nonce}">
 (function() {
+  const I18N = ${strings};
+  const t = (key, args = {}) => (I18N[key] || key).replace(/\\{(\\w+)\\}/g, (_, name) => String(args[name] ?? '{' + name + '}'));
   const vscode = acquireVsCodeApi();
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
   const emptyMsg = document.getElementById('emptyMsg');
+
+  // Localize UI elements
+  document.getElementById('bboxCatLabel').textContent = t('categoryLabel');
+  document.getElementById('bboxCat').placeholder = t('categoryLabel');
+  document.getElementById('bboxWLabel').textContent = t('widthLabel');
+  document.getElementById('bboxHLabel').textContent = t('heightLabel');
+  document.getElementById('bboxCancel').textContent = t('cancel');
+  document.getElementById('bboxTitle').textContent = t('newBboxTitle');
+  document.getElementById('drawBtn').textContent = t('drawBbox');
+  document.getElementById('drawBtn').title = t('drawBboxTooltip');
+  document.getElementById('deleteBtn').textContent = t('deleteMode');
+  document.getElementById('deleteBtn').title = t('deleteBboxTooltip');
+  document.getElementById('prevBtn').title = t('prevImage');
+  document.getElementById('nextBtn').title = t('nextImage');
+  document.getElementById('emptyMsg').textContent = t('noImageLoaded');
 
   // 状态
   let imageData = null;   // { imagePath, imageBase64, annotations, allCategories, filename }
@@ -836,7 +853,7 @@ function annotationHtml(cspSource: string): string {
     const yInput = document.getElementById('bboxY');
     const wInput = document.getElementById('bboxW');
     const hInput = document.getElementById('bboxH');
-    document.getElementById('bboxTitle').textContent = category ? 'Edit Bounding Box' : 'New Bounding Box';
+    document.getElementById('bboxTitle').textContent = category ? t('editBboxTitle') : t('newBboxTitle');
     catInput.value = category;
     xInput.value = x; yInput.value = y; wInput.value = w; hInput.value = h;
     errorEl.textContent = '';
@@ -845,7 +862,7 @@ function annotationHtml(cspSource: string): string {
 
     function validate() {
       const name = catInput.value.trim();
-      if (!name) { errorEl.textContent = 'Name required'; return false; }
+      if (!name) { errorEl.textContent = t('categoryRequired'); return false; }
       const existing = imageData?.allCategories || {};
       if (name !== category && existing[name]) {
         errorEl.textContent = "Already exists in '" + existing[name] + "'";
@@ -935,7 +952,6 @@ function annotationHtml(cspSource: string): string {
   /* ---------- 按钮事件 ---------- */
   document.getElementById('drawBtn').onclick = () => setMode(mode === 'draw' ? 'none' : 'draw');
   document.getElementById('deleteBtn').onclick = () => setMode(mode === 'delete' ? 'none' : 'delete');
-  document.getElementById('modifyBtn').onclick = () => { if (selectedIdx >= 0) showEditDialog(selectedIdx); };
   document.getElementById('prevBtn').onclick = () => navigate(-1);
   document.getElementById('nextBtn').onclick = () => navigate(1);
 
