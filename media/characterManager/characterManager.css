@@ -290,7 +290,28 @@ input::placeholder, textarea::placeholder { color: var(--vscode-input-placeholde
 .kv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 5px 12px; margin: 7px 0; font-size: 11px; }
 .kv-key { color: var(--muted); margin-right: 5px; }
 .effect-line { margin-top: 7px; }
-.line-label { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+.line-label { color: var(--muted); font-size: 11px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+.effect-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+.effect-mode-badge.mode-any {
+  background: color-mix(in srgb, var(--warning) 22%, transparent);
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 50%, transparent);
+}
+.effect-mode-badge.mode-all {
+  background: color-mix(in srgb, var(--info) 22%, transparent);
+  color: var(--info);
+  border: 1px solid color-mix(in srgb, var(--info) 50%, transparent);
+}
 .enhancement {
   border-left: 3px solid var(--accent);
   padding: 7px 9px;
