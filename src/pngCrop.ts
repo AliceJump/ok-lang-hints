@@ -185,6 +185,59 @@ export function encodePng(width: number, height: number, rgba: Buffer): Buffer {
   ]);
 }
 
+/**
+ * 高效 RGB PNG 编码器（对齐 ok-script compress_coco 的压缩效果）。
+ *
+ * 与 encodePng 的区别：
+ * - RGB (colorType=2) 而非 RGBA：省 33% 数据
+ * - Sub filter (filter=1)：提高压缩率 10-30%
+ * - zlib level 6：平衡压缩率与速度
+ */
+export function encodePngRgb(width: number, height: number, rgba: Buffer): Buffer {
+  const stride = width * 3; // RGB, 3 bytes per pixel
+  const raw = Buffer.alloc((stride + 1) * height);
+
+  for (let y = 0; y < height; y++) {
+    const rawRowStart = y * (stride + 1);
+    raw[rawRowStart] = 1; // filter: Sub (value = current - left)
+
+    const rgbaRowStart = y * width * 4;
+    const rowStart = rawRowStart + 1;
+
+    // 第一个像素：filter=Sub 时 left=0，所以 raw = pixel
+    raw[rowStart] = rgba[rgbaRowStart];       // R
+    raw[rowStart + 1] = rgba[rgbaRowStart + 1]; // G
+    raw[rowStart + 2] = rgba[rgbaRowStart + 2]; // B
+
+    // 后续像素：raw = pixel - left
+    for (let x = 1; x < width; x++) {
+      const di = rowStart + x * 3;
+      const si = rgbaRowStart + x * 4;
+      const pi = rgbaRowStart + (x - 1) * 4;
+      raw[di] = (rgba[si] - rgba[pi]) & 0xff;         // R
+      raw[di + 1] = (rgba[si + 1] - rgba[pi + 1]) & 0xff; // G
+      raw[di + 2] = (rgba[si + 2] - rgba[pi + 2]) & 0xff; // B
+    }
+  }
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // RGB (colorType=2)
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+
+  const idat = zlib.deflateSync(raw, { level: 6 });
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', idat),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
 /** 从 RGBA 像素按 bbox 裁剪并编码为 PNG data URL（统一高度等比缩放） */
 function cropAndEncode(
   width: number,

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { decodeRgba, encodePng } from './pngCrop';
+import { decodeRgba, encodePngRgb } from './pngCrop';
 
 /* ---------------- COCO 数据类型 ---------------- */
 
@@ -418,9 +418,9 @@ export class TemplateAssetData {
           }
         }
 
-        // 编码并写入打包 PNG
+        // 编码并写入打包 PNG（使用 RGB 编码器，对齐 ok-script 压缩效果）
         const pageFileName = `${nextImageId}.png`;
-        const pagePng = encodePng(W, H, canvasRgba);
+        const pagePng = encodePngRgb(W, H, canvasRgba);
         const pageDst = path.join(targetImagesDir, pageFileName);
         fs.writeFileSync(pageDst, pagePng);
 
