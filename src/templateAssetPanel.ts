@@ -102,6 +102,7 @@ class AssetGalleryController {
     private readonly thumbDir: string,
     private readonly isVisible: () => boolean,
     private readonly extensionUri: vscode.Uri,
+    private readonly globalState?: vscode.Memento,
   ) {
     liveControllers.add(this);
     this.disposables.push(
@@ -334,19 +335,27 @@ class AssetGalleryController {
     );
     if (!pick) return;
 
-    // Ask about generating label enum
-    const generateEnum = await vscode.window.showQuickPick(
-      [
-        { label: tr('Yes'), description: tr('Generate LabelEnum.py'), generate: true },
-        { label: tr('No'), description: tr('Skip enum generation'), generate: false },
-      ],
-      { placeHolder: tr('Generate template enum file?') },
-    );
-    if (!generateEnum) return;
+    // 读取上次输入的 enum 文件路径，回退到默认值
+    const defaultEnumPath = this.globalState?.get<string>('okLangHints.lastEnumFilePath') || '';
+    const enumFilePath = await vscode.window.showInputBox({
+      prompt: tr('LabelEnum.py file path (relative to workspace root, leave empty to skip)'),
+      placeHolder: tr('e.g. assets/data/LabelEnum.py or src/label_enum.py'),
+      value: defaultEnumPath,
+    });
+    if (enumFilePath === undefined) return;
+    const trimmedEnumPath = enumFilePath.trim();
+    const generateEnum = trimmedEnumPath.length > 0;
+    // 将相对路径解析为绝对路径
+    const absEnumPath = generateEnum ? path.join(folder.uri.fsPath, trimmedEnumPath) : undefined;
+
+    // 记住本次输入的路径
+    if (this.globalState) {
+      void this.globalState.update('okLangHints.lastEnumFilePath', trimmedEnumPath);
+    }
 
     try {
       this.data.ensureTemplateFolder();
-      this.data.saveToAssets(pick.target, generateEnum.generate);
+      this.data.saveToAssets(pick.target, generateEnum, absEnumPath);
       void vscode.window.showInformationMessage(tr('Saved to: {path}', { path: pick.label }));
     } catch (e) {
       void vscode.window.showErrorMessage(tr('Save failed: {error}', { error: String(e) }));
@@ -433,6 +442,7 @@ export class TemplateAssetViewProvider implements vscode.WebviewViewProvider {
     private readonly data: TemplateAssetData,
     private readonly thumbDir: string,
     private readonly extensionUri: vscode.Uri,
+    private readonly globalState?: vscode.Memento,
   ) {}
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -446,6 +456,7 @@ export class TemplateAssetViewProvider implements vscode.WebviewViewProvider {
       this.thumbDir,
       () => view.visible,
       this.extensionUri,
+      this.globalState,
     );
     controller.attachHtml();
     view.onDidChangeVisibility(() => { if (view.visible) void controller.update(); });
@@ -458,7 +469,7 @@ export class TemplateAssetViewProvider implements vscode.WebviewViewProvider {
 export class TemplateAssetPanel {
   static current: TemplateAssetPanel | undefined;
 
-  static show(data: TemplateAssetData, thumbDir: string, extensionUri: vscode.Uri): void {
+  static show(data: TemplateAssetData, thumbDir: string, extensionUri: vscode.Uri, globalState?: vscode.Memento): void {
     if (TemplateAssetPanel.current) {
       TemplateAssetPanel.current.panel.reveal();
       void TemplateAssetPanel.current.controller.update();
@@ -480,6 +491,7 @@ export class TemplateAssetPanel {
       thumbDir,
       () => panel.visible,
       extensionUri,
+      globalState,
     );
     TemplateAssetPanel.current = new TemplateAssetPanel(panel, controller);
   }

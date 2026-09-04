@@ -231,7 +231,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.window.registerWebviewViewProvider(
       TemplateAssetViewProvider.viewType,
-      new TemplateAssetViewProvider(templateAssetData, thumbDir, context.extensionUri),
+      new TemplateAssetViewProvider(templateAssetData, thumbDir, context.extensionUri, context.globalState),
     ),
     vscode.commands.registerCommand('okLangHints.showTemplates', () => {
       // 聚焦活动栏中的模板视图（左侧图标 Tab）
@@ -248,7 +248,7 @@ export function activate(context: vscode.ExtensionContext): void {
       CharacterManagerPanel.show(characterManagerDependencies);
     }),
     vscode.commands.registerCommand('okLangHints.openTemplateAssets', () => {
-      TemplateAssetPanel.show(templateAssetData, thumbDir, context.extensionUri);
+      TemplateAssetPanel.show(templateAssetData, thumbDir, context.extensionUri, context.globalState);
     }),
     vscode.commands.registerCommand('okLangHints.openAnnotationEditor', () => {
       // 打开当前选中的图片，或者提示用户先选择
