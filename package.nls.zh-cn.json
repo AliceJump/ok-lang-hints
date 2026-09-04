@@ -25,5 +25,6 @@
   "config.characterMasterFile": "角色主表 JSON（相对于角色项目根目录）。",
   "config.characterSkillsDirectory": "角色技能 JSON 目录（相对于角色项目根目录）。",
   "config.characterLocaleFile": "角色名称多语言 JSON（相对于角色项目根目录）。",
-  "config.characterAvatarTemplateRegex": "角色头像模板名正则；有捕获组时使用第一组，否则使用匹配前缀后的剩余名称与角色英文 slug 匹配；默认兼容 battleicon、battle_icon 和 battle-icon 前缀。"
+  "config.characterAvatarTemplateRegex": "角色头像模板名正则；有捕获组时使用第一组，否则使用匹配前缀后的剩余名称与角色英文 slug 匹配；默认兼容 battleicon、battle_icon 和 battle-icon 前缀。",
+  "config.annotationKeybindings": "标注编辑器的键盘快捷键。每个值为按键名称，可选地使用 `+` 连接修饰键前缀（如 `ctrl+z`、`shift+d`）。支持的键：字母、数字、`Delete`、`ArrowLeft`、`ArrowRight` 等。"
 }

@@ -228,6 +228,24 @@
           "type": "string",
           "default": "ok_templates",
           "description": "%config.okTemplatesDirectory%"
+        },
+        "okLangHints.annotationKeybindings": {
+          "type": "object",
+          "default": {
+            "drawBbox": "r",
+            "deleteMode": "d",
+            "undo": "ctrl+z",
+            "redo": "ctrl+y",
+            "copy": "ctrl+c",
+            "paste": "ctrl+v",
+            "deleteSelected": "Delete",
+            "prevImage": "ArrowLeft",
+            "nextImage": "ArrowRight"
+          },
+          "additionalProperties": {
+            "type": "string"
+          },
+          "markdownDescription": "%config.annotationKeybindings%"
         }
       }
     }

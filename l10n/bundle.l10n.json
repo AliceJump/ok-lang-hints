@@ -131,5 +131,9 @@
   "Source": "Source",
   "At runtime, fix_match_regex translates this pattern using ocr.po before calling re.compile.": "At runtime, fix_match_regex translates this pattern using ocr.po before calling re.compile.",
   "{count} keys": "{count} keys",
-  "Please click an image in the Template Assets panel to open the annotation editor.": "Please click an image in the Template Assets panel to open the annotation editor."
+  "Please click an image in the Template Assets panel to open the annotation editor.": "Please click an image in the Template Assets panel to open the annotation editor.",
+  "LabelEnum.py file path (relative to workspace root, leave empty to skip)": "LabelEnum.py file path (relative to workspace root, leave empty to skip)",
+  "e.g. assets/data/LabelEnum.py or src/label_enum.py": "e.g. assets/data/LabelEnum.py or src/label_enum.py",
+  "Undo ({key})": "Undo ({key})",
+  "Redo ({key})": "Redo ({key})"
 }

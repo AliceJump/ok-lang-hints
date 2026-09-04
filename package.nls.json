@@ -29,5 +29,6 @@
   "config.characterSkillsDirectory": "Character skill JSON directory relative to the character project root.",
   "config.characterLocaleFile": "Character name localization JSON relative to the character project root.",
   "config.characterAvatarTemplateRegex": "Regular expression for avatar template names. The first capture group is used when present; otherwise the text after the matched prefix is compared with the character's English slug. Defaults to battleicon/battle_icon/battle-icon prefixes.",
-  "config.okTemplatesDirectory": "ok_templates folder name relative to the workspace root. Used by the template asset manager."
+  "config.okTemplatesDirectory": "ok_templates folder name relative to the workspace root. Used by the template asset manager.",
+  "config.annotationKeybindings": "Keyboard shortcuts for the annotation editor. Each value is a key name, optionally prefixed with modifier(s) joined by `+` (e.g. `ctrl+z`, `shift+d`). Supported keys: letters, digits, `Delete`, `ArrowLeft`, `ArrowRight`, etc."
 }

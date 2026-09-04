@@ -41,6 +41,16 @@ class AnnotationController {
 
   attachHtml(): void {
     this.webview.html = annotationHtml(this.webview.cspSource, this.extensionUri, this.webview);
+    this.sendKeybindings();
+  }
+
+  /** 读取扩展设置并发送快捷键配置到 webview */
+  private sendKeybindings(): void {
+    const cfg = vscode.workspace.getConfiguration('okLangHints');
+    const kb = cfg.get<Record<string, string>>('annotationKeybindings');
+    if (kb) {
+      void this.webview.postMessage({ type: 'config', keybindings: kb });
+    }
   }
 
   open(imagePath: string, imageList: string[]): void {
