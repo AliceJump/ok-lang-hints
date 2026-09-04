@@ -41,6 +41,83 @@
   let drawDragging = false; // true when mouse is held down in draw mode
   let clipboard = null;    // copied bbox for Ctrl+C/V
 
+  // 撤销/重做
+  let undoStack = [];
+  let redoStack = [];
+  const MAX_UNDO = 100;
+
+  // 可配置快捷键 (从扩展设置读取)
+  let keybindings = {
+    drawBbox: 'r',
+    deleteMode: 'd',
+    undo: 'ctrl+z',
+    redo: 'ctrl+y',
+    copy: 'ctrl+c',
+    paste: 'ctrl+v',
+    deleteSelected: 'Delete',
+    prevImage: 'ArrowLeft',
+    nextImage: 'ArrowRight'
+  };
+
+  function parseKeybinding(kb) {
+    const parts = kb.toLowerCase().split('+');
+    const key = parts.pop();
+    const needCtrl = parts.includes('ctrl');
+    const needShift = parts.includes('shift');
+    const needAlt = parts.includes('alt');
+    const needMeta = parts.includes('meta') || parts.includes('cmd');
+    return { key, needCtrl, needShift, needAlt, needMeta };
+  }
+
+  function matchKeybinding(e, bindingStr) {
+    const kb = parseKeybinding(bindingStr);
+    const keyMatch = e.key.toLowerCase() === kb.key || e.code.toLowerCase() === kb.key;
+    return keyMatch &&
+           !!(e.ctrlKey || e.metaKey) === kb.needCtrl &&
+           !!e.shiftKey === kb.needShift &&
+           !!e.altKey === kb.needAlt;
+  }
+
+  function pushUndo() {
+    undoStack.push(JSON.parse(JSON.stringify(annotations)));
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    redoStack = [];
+  }
+
+  function undo() {
+    if (!undoStack.length) return;
+    redoStack.push(JSON.parse(JSON.stringify(annotations)));
+    annotations = undoStack.pop();
+    nextId = annotations.length ? Math.max(...annotations.map(a => a.id)) + 1 : 1;
+    selectedIdx = -1; hoveredIdx = -1;
+    saveAnnotations(); paint();
+  }
+
+  function redo() {
+    if (!redoStack.length) return;
+    undoStack.push(JSON.parse(JSON.stringify(annotations)));
+    annotations = redoStack.pop();
+    nextId = annotations.length ? Math.max(...annotations.map(a => a.id)) + 1 : 1;
+    selectedIdx = -1; hoveredIdx = -1;
+    saveAnnotations(); paint();
+  }
+
+  function updateUndoRedoButtons() {
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    if (undoBtn) { undoBtn.disabled = !undoStack.length; undoBtn.title = 'Undo (' + keybindings.undo + ')'; }
+    if (redoBtn) { redoBtn.disabled = !redoStack.length; redoBtn.title = 'Redo (' + keybindings.redo + ')'; }
+  }
+
+  function updateButtonTexts() {
+    const kb = keybindings;
+    const drawBtn = document.getElementById('drawBtn');
+    const deleteBtn = document.getElementById('deleteBtn');
+    if (drawBtn) { drawBtn.textContent = t('drawBbox'); drawBtn.title = t('drawBboxTooltip'); }
+    if (deleteBtn) { deleteBtn.textContent = t('deleteMode'); deleteBtn.title = t('deleteBboxTooltip'); }
+    updateUndoRedoButtons();
+  }
+
   // 拖拽
   let dragging = false;
   let dragStartPos = null;
@@ -243,6 +320,7 @@
     const { idx: hIdx, handle } = findHandleAt(px, py);
     if (handle && hIdx >= 0) {
       selectedIdx = hIdx;
+      pushUndo();
       resizing = true;
       resizeHandle = handle;
       resizeStartPos = { x: px, y: py };
@@ -256,6 +334,7 @@
     const idx = findAnnAt(px, py);
     selectedIdx = idx;
     if (idx >= 0) {
+      pushUndo();
       dragging = true;
       dragStartPos = { x: px, y: py };
       const ann = annotations[idx];
@@ -282,6 +361,8 @@
       }
       dragging = false; dragStartPos = null; dragOrigRect = null;
       resizing = false; resizeStartPos = null; resizeOrigRect = null; resizeHandle = null;
+      // 双击不产生位移，回退 mousedown 时的 pushUndo
+      if (undoStack.length > 0) undoStack.pop();
       paint();
       showEditDialog(idx);
     }
@@ -365,8 +446,33 @@
       return;
     }
     drawDragging = false;
-    if (dragging) { dragging = false; dragStartPos = null; dragOrigRect = null; saveAnnotations(); }
-    if (resizing) { resizing = false; resizeStartPos = null; resizeOrigRect = null; resizeHandle = null; saveAnnotations(); }
+    if (dragging) {
+      const moved = dragOrigRect &&
+        (annotations[selectedIdx].x !== dragOrigRect.x ||
+         annotations[selectedIdx].y !== dragOrigRect.y);
+      dragging = false; dragStartPos = null; dragOrigRect = null;
+      if (moved) {
+        saveAnnotations();
+        updateUndoRedoButtons();
+      } else {
+        // 无实际移动，回退 pushUndo
+        undoStack.pop();
+      }
+    }
+    if (resizing) {
+      const changed = resizeOrigRect &&
+        (annotations[selectedIdx].x !== resizeOrigRect.x ||
+         annotations[selectedIdx].y !== resizeOrigRect.y ||
+         annotations[selectedIdx].w !== resizeOrigRect.w ||
+         annotations[selectedIdx].h !== resizeOrigRect.h);
+      resizing = false; resizeStartPos = null; resizeOrigRect = null; resizeHandle = null;
+      if (changed) {
+        saveAnnotations();
+        updateUndoRedoButtons();
+      } else {
+        undoStack.pop();
+      }
+    }
     if (panning) {
       panning = false; panStartPos = null; panStartOffset = null;
       canvas.style.cursor = isZoomed() ? 'grab' : 'crosshair';
@@ -423,9 +529,11 @@
     if (w < 3 || h < 3) { paint(); return; }
     showBBoxDialog('', x, y, w, h, (cat, bx, by, bw, bh) => {
       if (cat) {
+        pushUndo();
         annotations.push({ id: nextId++, category: cat, x: bx, y: by, w: bw, h: bh });
         saveAnnotations();
         paint();
+        updateUndoRedoButtons();
       }
       setMode('none');
     });
@@ -434,11 +542,13 @@
   /* ---------- 删除 ---------- */
   function deleteSelected() {
     if (selectedIdx < 0) return;
+    pushUndo();
     annotations.splice(selectedIdx, 1);
     selectedIdx = -1;
     hoveredIdx = -1;
     saveAnnotations();
     paint();
+    updateUndoRedoButtons();
   }
 
   /* ---------- 保存标注 ---------- */
@@ -502,8 +612,10 @@
     const ann = annotations[idx];
     showBBoxDialog(ann.category, ann.x, ann.y, ann.w, ann.h, (cat, x, y, w, h) => {
       if (cat) {
+        pushUndo();
         ann.category = cat; ann.x = x; ann.y = y; ann.w = w; ann.h = h;
         saveAnnotations(); paint();
+        updateUndoRedoButtons();
       }
     });
   }
@@ -540,16 +652,25 @@
   /* ---------- 键盘事件 ---------- */
   document.addEventListener('keydown', (e) => {
     if (document.getElementById('bboxModal').classList.contains('visible')) return;
-    const ctrl = e.ctrlKey || e.metaKey;
-    if (ctrl && (e.key === 'c' || e.key === 'C') && selectedIdx >= 0 && mode === 'none') {
-      // Ctrl+C: copy selected bbox
+
+    // 撤销
+    if (matchKeybinding(e, keybindings.undo)) {
+      e.preventDefault(); undo(); updateUndoRedoButtons(); return;
+    }
+    // 重做
+    if (matchKeybinding(e, keybindings.redo)) {
+      e.preventDefault(); redo(); updateUndoRedoButtons(); return;
+    }
+    // 复制
+    if (matchKeybinding(e, keybindings.copy) && selectedIdx >= 0 && mode === 'none') {
       const ann = annotations[selectedIdx];
       clipboard = { category: ann.category, x: ann.x, y: ann.y, w: ann.w, h: ann.h };
       return;
     }
-    if (ctrl && (e.key === 'v' || e.key === 'V') && clipboard && mode === 'none') {
-      // Ctrl+V: paste bbox at same position with offset
+    // 粘贴
+    if (matchKeybinding(e, keybindings.paste) && clipboard && mode === 'none') {
       const offset = 10;
+      pushUndo();
       const newAnn = {
         id: nextId++,
         category: clipboard.category,
@@ -558,7 +679,6 @@
         w: clipboard.w,
         h: clipboard.h
       };
-      // Clamp to image bounds
       if (img) {
         newAnn.x = Math.min(newAnn.x, img.width - newAnn.w);
         newAnn.y = Math.min(newAnn.y, img.height - newAnn.h);
@@ -567,19 +687,24 @@
       }
       annotations.push(newAnn);
       selectedIdx = annotations.length - 1;
-      saveAnnotations();
-      paint();
+      saveAnnotations(); paint();
+      updateUndoRedoButtons();
       return;
     }
-    if (e.key === 'r' || e.key === 'R') {
+    // 画框模式
+    if (matchKeybinding(e, keybindings.drawBbox) && !e.ctrlKey && !e.metaKey && !e.altKey) {
       setMode(mode === 'draw' ? 'none' : 'draw');
-    } else if (e.key === 'd' || e.key === 'D') {
+    } else if (matchKeybinding(e, keybindings.deleteMode) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // 删除模式
       setMode(mode === 'delete' ? 'none' : 'delete');
-    } else if (e.key === 'Delete' && selectedIdx >= 0 && mode === 'none') {
+    } else if (matchKeybinding(e, keybindings.deleteSelected) && selectedIdx >= 0 && mode === 'none') {
+      // 删除选中
       deleteSelected();
-    } else if (e.key === 'ArrowLeft') {
+    } else if (matchKeybinding(e, keybindings.prevImage)) {
+      // 上一张
       navigate(-1);
-    } else if (e.key === 'ArrowRight') {
+    } else if (matchKeybinding(e, keybindings.nextImage)) {
+      // 下一张
       navigate(1);
     }
   });
@@ -597,17 +722,28 @@
   /* ---------- 按钮事件 ---------- */
   document.getElementById('drawBtn').onclick = () => setMode(mode === 'draw' ? 'none' : 'draw');
   document.getElementById('deleteBtn').onclick = () => setMode(mode === 'delete' ? 'none' : 'delete');
+  document.getElementById('undoBtn').onclick = () => { undo(); updateUndoRedoButtons(); };
+  document.getElementById('redoBtn').onclick = () => { redo(); updateUndoRedoButtons(); };
   document.getElementById('prevBtn').onclick = () => navigate(-1);
   document.getElementById('nextBtn').onclick = () => navigate(1);
 
   /* ---------- 接收消息 ---------- */
   window.addEventListener('message', (e) => {
     const msg = e.data;
+    if (msg.type === 'config') {
+      // 接收快捷键配置
+      if (msg.keybindings) {
+        Object.assign(keybindings, msg.keybindings);
+      }
+      updateButtonTexts();
+      return;
+    }
     if (msg.type === 'load') {
       imageData = msg;
       annotations = msg.annotations || [];
       nextId = annotations.length ? Math.max(...annotations.map(a => a.id)) + 1 : 1;
       selectedIdx = -1; hoveredIdx = -1;
+      undoStack = []; redoStack = [];
 
       if (msg.imageBase64) {
         img = new Image();
@@ -630,6 +766,7 @@
         msg.filename + ' (' + (msg.currentIndex + 1) + '/' + msg.totalImages + ')';
       document.getElementById('prevBtn').disabled = msg.currentIndex <= 0;
       document.getElementById('nextBtn').disabled = msg.currentIndex >= msg.totalImages - 1;
+      updateUndoRedoButtons();
     }
   });
 
