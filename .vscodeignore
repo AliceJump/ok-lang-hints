@@ -23,3 +23,8 @@ logs/**/*.log
 .vscode/ok-lang-hints-*.json
 AGENT.md
 AGENTS.md
+**/agent.md
+**/agents.md
+python/**
+screenshots/**
+ok_tasks/**
