@@ -1,7 +1,7 @@
 {
-  "extension.displayName": "Sugerencias de idioma de ok-script",
-  "extension.description": "Autocompletado, sugerencias en línea, vista previa de plantillas, lanzamiento de tareas y herramientas de datos de personajes para proyectos ok-script.",
-  "command.category": "Sugerencias de idioma de ok-script",
+  "extension.displayName": "ok-script Toolkit",
+  "extension.description": "Autocompletado, sugerencias en línea, vista previa de plantillas, lanzamiento de tareas, herramientas de datos de personajes y más para proyectos ok-script.",
+  "command.category": "ok-script Toolkit",
   "command.showTemplates": "Abrir galería de plantillas",
   "command.openTemplatesEditor": "Abrir galería de plantillas en el editor",
   "command.showTaskLauncher": "Abrir lanzador de tareas",

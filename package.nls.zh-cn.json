@@ -1,7 +1,7 @@
 {
-  "extension.displayName": "ok-script 语言提示",
-  "extension.description": "为 ok-script 项目提供智能补全、行内提示、模板预览、任务启动和角色数据工具。",
-  "command.category": "ok-script 语言提示",
+  "extension.displayName": "ok-script 工具箱",
+  "extension.description": "为 ok-script 项目提供智能补全、行内提示、模板预览、任务启动、角色数据工具等完整开发辅助。",
+  "command.category": "ok-script 工具箱",
   "command.showTemplates": "打开模板面板",
   "command.openTemplatesEditor": "在编辑器中打开模板面板",
   "command.showTaskLauncher": "打开任务启动",

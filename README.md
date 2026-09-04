@@ -1,6 +1,6 @@
-# ok-script Lang Hints
+# ok-script Toolkit
 
-面向 ok-script 项目的 VS Code 辅助扩展，为 Python 代码中的语言键和图像模板提供可视化提示。
+面向 ok-script 项目的 VS Code 完整开发辅助扩展，为 Python 代码中的语言键和图像模板提供可视化提示，并提供模板管理、任务启动和角色数据工具。
 
 ## 功能
 

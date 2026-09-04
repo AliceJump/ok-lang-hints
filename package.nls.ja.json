@@ -1,7 +1,7 @@
 {
-  "extension.displayName": "ok-script 言語ヒント",
-  "extension.description": "ok-script プロジェクト向けの補完、インラインヒント、テンプレートプレビュー、タスク起動、キャラクターデータツール。",
-  "command.category": "ok-script 言語ヒント",
+  "extension.displayName": "ok-script ツールキット",
+  "extension.description": "ok-script プロジェクト向けの補完、インラインヒント、テンプレートプレビュー、タスク起動、キャラクターデータツールなど。",
+  "command.category": "ok-script ツールキット",
   "command.showTemplates": "テンプレートギャラリーを開く",
   "command.openTemplatesEditor": "テンプレートギャラリーをエディターで開く",
   "command.showTaskLauncher": "タスク起動を開く",

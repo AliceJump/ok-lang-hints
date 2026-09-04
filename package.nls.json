@@ -1,7 +1,7 @@
 {
-  "extension.displayName": "ok-script Lang Hints",
-  "extension.description": "IntelliSense, inline hints, template previews, task launching, and character data tools for ok-script projects.",
-  "command.category": "ok-script Lang Hints",
+  "extension.displayName": "ok-script Toolkit",
+  "extension.description": "IntelliSense, inline hints, template previews, task launching, character data tools, and more for ok-script projects.",
+  "command.category": "ok-script Toolkit",
   "command.showTemplates": "Open Template Gallery",
   "command.openTemplatesEditor": "Open Template Gallery in Editor",
   "command.showTaskLauncher": "Open Task Launcher",

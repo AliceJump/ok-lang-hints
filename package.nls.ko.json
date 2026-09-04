@@ -1,7 +1,7 @@
 {
-  "extension.displayName": "ok-script 언어 힌트",
-  "extension.description": "ok-script 프로젝트용 자동 완성, 인라인 힌트, 템플릿 미리보기, 작업 실행 및 캐릭터 데이터 도구입니다.",
-  "command.category": "ok-script 언어 힌트",
+  "extension.displayName": "ok-script 툴킷",
+  "extension.description": "ok-script 프로젝트용 자동 완성, 인라인 힌트, 템플릿 미리보기, 작업 실행, 캐릭터 데이터 도구 등.",
+  "command.category": "ok-script 툴킷",
   "command.showTemplates": "템플릿 갤러리 열기",
   "command.openTemplatesEditor": "편집기에서 템플릿 갤러리 열기",
   "command.showTaskLauncher": "작업 실행기 열기",
