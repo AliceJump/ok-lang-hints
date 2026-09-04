@@ -75,18 +75,43 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "okLangHints",
-          "title": "%viewContainer.title%",
+          "id": "okTools",
+          "title": "%viewContainer.tools.title%",
+          "icon": "media/icons/toolbox.svg"
+        },
+        {
+          "id": "okTemplates",
+          "title": "%viewContainer.templates.title%",
           "icon": "media/icons/templates.svg"
         }
       ]
     },
     "views": {
-      "okLangHints": [
+      "okTools": [
+        {
+          "type": "webview",
+          "id": "okLangHints.toolbox",
+          "name": "%view.toolbox%",
+          "title": "%view.toolbox.title%",
+          "icon": "media/icons/toolbox.svg"
+        },
+        {
+          "type": "webview",
+          "id": "okLangHints.taskLauncher",
+          "name": "%view.taskLauncher%",
+          "title": "%view.taskLauncher.title%",
+          "icon": "media/icons/task.svg",
+          "webviewOptions": {
+            "retainContextWhenHidden": true
+          }
+        }
+      ],
+      "okTemplates": [
         {
           "type": "webview",
           "id": "okLangHints.templateGallery",
           "name": "%view.templateGallery%",
+          "title": "%view.templateGallery.title%",
           "icon": "media/icons/templates.svg",
           "webviewOptions": {
             "retainContextWhenHidden": true
@@ -94,23 +119,9 @@
         },
         {
           "type": "webview",
-          "id": "okLangHints.taskLauncher",
-          "name": "%view.taskLauncher%",
-          "icon": "media/icons/task.svg",
-          "webviewOptions": {
-            "retainContextWhenHidden": true
-          }
-        },
-        {
-          "type": "webview",
-          "id": "okLangHints.toolbox",
-          "name": "%view.toolbox%",
-          "icon": "media/icons/toolbox.svg"
-        },
-        {
-          "type": "webview",
           "id": "okLangHints.templateAssets",
           "name": "%view.templateAssets%",
+          "title": "%view.templateAssets.title%",
           "icon": "media/icons/templates.svg",
           "webviewOptions": {
             "retainContextWhenHidden": true
