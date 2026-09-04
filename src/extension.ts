@@ -1,10 +1,11 @@
 import * as path from 'path';
+import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 import { LangData, poDirectorySetting } from './langData';
 import { tr } from './localization';
 import { FeatureData } from './featureData';
 import { EffectData } from './effectData';
-import { clearCropCache, clearThumbDir, warmCropCache, initCropWorkerPool, disposeCropWorkerPool, setCropLogger, THUMB_HEIGHT } from './pngCrop';
+import { clearCropCache, clearThumbDir, warmCropCache, initCropWorkerPool, disposeCropWorkerPool, setCropLogger, THUMB_HEIGHT, thumbDirForSource, thumbSourceSubdir, clearSourceThumbs } from './pngCrop';
 import {
   LangCompletionProvider,
   LangHoverProvider,
@@ -32,8 +33,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const effects = new EffectData(folder);
   const inlay = new LangInlayHintsProvider(data, features, effects);
   const jsonInlay = new EffectInlayHintsProvider(effects);
-  // 模板缩略图 PNG 落盘目录（webview 经 asWebviewUri 加载）
-  const thumbDir = path.join(context.globalStorageUri.fsPath, 'template-thumbs');
+  // 模板缩略图 PNG 落盘目录（按工作区隔离，避免多工作区共享缓存冲突）
+  // hash 第一个工作区路径作为子目录，不同工作区 → 不同目录
+  const wsHash = crypto.createHash('sha1')
+    .update(folder?.uri.fsPath ?? 'default')
+    .digest('hex').slice(0, 12);
+  const thumbDir = path.join(context.globalStorageUri.fsPath, 'template-thumbs', wsHash);
 
   // 性能日志输出通道：查看 → 输出 → ok-lang-hints
   const cropLog = vscode.window.createOutputChannel('ok-lang-hints');
@@ -48,7 +53,7 @@ export function activate(context: vscode.ExtensionContext): void {
       imagePath: ft.imagePath,
       bbox: ft.bbox,
       targetHeight: THUMB_HEIGHT,
-      thumbDir,
+      thumbDir: thumbDirForSource(thumbDir, ft.imagePath),  // 按来源分目录
     }));
     void warmCropCache(reqs);
   };
@@ -71,12 +76,22 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // 模板数据：coco_annotations.json / 图片 PNG → 刷新 FeatureData + 清缓存 + 预热 + 画廊
   let featTimer: NodeJS.Timeout | undefined;
-  const refreshFeatures = () => {
+  const refreshFeatures = (changedUris?: vscode.Uri[]) => {
     if (featTimer) clearTimeout(featTimer);
     featTimer = setTimeout(() => {
       features.refresh(true);
       clearCropCache();
-      clearThumbDir(thumbDir);
+      // 按变更文件的选择性清除：只清受影响来源的缩略图
+      if (changedUris && changedUris.length > 0) {
+        const sources = new Set<string>();
+        for (const uri of changedUris) {
+          sources.add(thumbSourceSubdir(uri.fsPath));
+        }
+        for (const src of sources) clearSourceThumbs(thumbDir, src);
+      } else {
+        // 无变更信息时（如手动触发），清全部
+        clearThumbDir(thumbDir);
+      }
       prewarm();
       repaintAllGalleries();
       CharacterManagerPanel.refreshCurrent();
@@ -103,7 +118,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const effectsFile = (vscode.workspace.getConfiguration('okLangHints').get<string>('effectsFile') || 'src/data/effects.py')
       .replace(/[\\]+/g, '/')
       .replace(/^\//, '');
-    return `**/{assets/lang/*.json,${poGlob}/**/*.po,assets/coco_annotations.json,assets/images/*.png,ok_tasks/assets/coco_annotations.json,ok_tasks/assets/images/*.png,${effectsFile}}`;
+    return `**/{assets/lang/*.json,${poGlob}/**/*.po,assets/coco_annotations.json,assets/images/*.png,ok_tasks/assets/coco_annotations.json,ok_tasks/assets/images/*.png,ok_templates/coco_annotations.json,ok_templates/*.png,${effectsFile}}`;
   };
 
   /**
@@ -135,8 +150,10 @@ export function activate(context: vscode.ExtensionContext): void {
     if (
       rel === 'assets/coco_annotations.json' ||
       rel === 'ok_tasks/assets/coco_annotations.json' ||
+      rel === 'ok_templates/coco_annotations.json' ||
       (rel.startsWith('assets/images/') && pngRe.test(rel)) ||
-      (rel.startsWith('ok_tasks/assets/images/') && pngRe.test(rel))
+      (rel.startsWith('ok_tasks/assets/images/') && pngRe.test(rel)) ||
+      (rel.startsWith('ok_templates/') && pngRe.test(rel))
     ) {
       return { ...empty, features: true };
     }
@@ -146,9 +163,9 @@ export function activate(context: vscode.ExtensionContext): void {
     return empty;
   };
 
-  const dispatchRefresh = (target: RefreshTarget) => {
+  const dispatchRefresh = (target: RefreshTarget, uri?: vscode.Uri) => {
     if (target.lang) refreshLang();
-    if (target.features) refreshFeatures();
+    if (target.features) refreshFeatures(uri ? [uri] : undefined);
     if (target.effects) refreshEffects();
   };
 
@@ -156,8 +173,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const recreateWatcher = () => {
     if (watcher) watcher.dispose();
     watcher = vscode.workspace.createFileSystemWatcher(langWatchPattern());
-    watcher.onDidChange((uri) => dispatchRefresh(getAffectedSources(uri)));
-    watcher.onDidCreate((uri) => dispatchRefresh(getAffectedSources(uri)));
+    watcher.onDidChange((uri) => dispatchRefresh(getAffectedSources(uri), uri));
+    watcher.onDidCreate((uri) => dispatchRefresh(getAffectedSources(uri), uri));
     watcher.onDidDelete((uri) => dispatchRefresh(getAffectedSources(uri)));
     return watcher;
   };

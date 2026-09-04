@@ -412,6 +412,37 @@ export function clearCropCache(): void {
   CROP_CACHE.clear();
 }
 
+/**
+ * 从 imagePath 判断来源子目录。
+ * ok_tasks/assets/images/X.png → 'ok_tasks'
+ * assets/images/X.png → 'assets'
+ */
+export function thumbSourceSubdir(imagePath: string): string {
+  if (imagePath.includes('ok_tasks')) return 'ok_tasks';
+  if (imagePath.includes('ok_templates')) return 'ok_templates';
+  return 'assets';
+}
+
+/** 根据 basePath + 来源子目录，返回实际缩略图目录 */
+export function thumbDirForSource(basePath: string, imagePath: string): string {
+  return path.join(basePath, thumbSourceSubdir(imagePath));
+}
+
+/**
+ * 选择性删除某个来源的全部缩略图（磁盘）。
+ * 只扫描 basePath 下的子目录，不影响其他来源。
+ */
+export function clearSourceThumbs(basePath: string, source: string): void {
+  const dir = path.join(basePath, source);
+  try {
+    if (!fs.existsSync(dir)) return;
+    for (const f of fs.readdirSync(dir)) {
+      try { fs.rmSync(path.join(dir, f), { recursive: true, force: true }); } catch { /* 忽略 */ }
+    }
+  } catch { /* 忽略 */ }
+  log(`clearSourceThumbs: ${source}/ cleared`);
+}
+
 /* ---------------- 缩略图文件路径 ---------------- */
 
 function thumbFileName(imagePath: string, bbox: [number, number, number, number], targetHeight: number): string {
@@ -419,12 +450,13 @@ function thumbFileName(imagePath: string, bbox: [number, number, number, number]
   return `t_${crypto.createHash('sha1').update(key).digest('hex').slice(0, 16)}.png`;
 }
 
-/** 返回模板缩略图的确定性绝对路径，不创建文件。 */
+/** 返回模板缩略图的确定性绝对路径（自动路由到来源子目录）。 */
 export function templateThumbFilePath(
   imagePath: string, bbox: [number, number, number, number],
   outDir: string, targetHeight = THUMB_HEIGHT,
 ): string {
-  return path.join(outDir, thumbFileName(imagePath, bbox, targetHeight));
+  const srcDir = thumbDirForSource(outDir, imagePath);
+  return path.join(srcDir, thumbFileName(imagePath, bbox, targetHeight));
 }
 
 /* ========================================================================
@@ -481,8 +513,9 @@ export async function warmCropCache(requests: CropRequest[]): Promise<void> {
 
     await new Promise((resolve) => setImmediate(resolve));
 
-    // thumbDir 取自 CropRequest，确保 worker 写到正确的缩略图目录
-    const thumbDir = requests[0]?.thumbDir ?? path.dirname(templateThumbFilePath(imagePath, missing[0].bbox, '', targetHeight));
+    // 每张图使用自己的 thumbDir（按来源子目录隔离）
+    const thumbDir = items[0]?.thumbDir ?? requests[0]?.thumbDir;
+    if (!thumbDir) { log(`warmCropCache: no thumbDir for ${path.basename(imagePath)}, skip`); continue; }
     const imgT0 = performance.now();
     const results = await submitBatchToWorker(
       imagePath,
@@ -546,7 +579,9 @@ export async function cropTemplateThumbFileAsync(
   imagePath: string, bbox: [number, number, number, number],
   outDir: string, targetHeight = THUMB_HEIGHT,
 ): Promise<string | undefined> {
-  const file = templateThumbFilePath(imagePath, bbox, outDir, targetHeight);
+  // 按来源自动路由到子目录
+  const srcDir = thumbDirForSource(outDir, imagePath);
+  const file = templateThumbFilePath(imagePath, bbox, srcDir, targetHeight);
   try {
     if (fs.existsSync(file) && fs.statSync(file).size > 0) return file;
   } catch { /* 重写 */ }
@@ -577,7 +612,7 @@ export async function cropTemplateThumbFileAsync(
 
   // 有 worker：提交异步任务（主线程不阻塞）
   const t0 = performance.now();
-  const result = await submitToWorker(imagePath, bbox, targetHeight, outDir);
+  const result = await submitToWorker(imagePath, bbox, targetHeight, srcDir);
   if (result) {
     logT(`thumb async: ${path.basename(imagePath)} via worker`, t0);
     const key = cropKey(imagePath, bbox, targetHeight);
@@ -595,10 +630,11 @@ export function removeTemplateThumbFile(
   imagePath: string, bbox: [number, number, number, number],
   outDir: string, targetHeight = THUMB_HEIGHT,
 ): void {
-  try { fs.rmSync(templateThumbFilePath(imagePath, bbox, outDir, targetHeight), { force: true }); } catch { /* 忽略 */ }
+  const srcDir = thumbDirForSource(outDir, imagePath);
+  try { fs.rmSync(templateThumbFilePath(imagePath, bbox, srcDir, targetHeight), { force: true }); } catch { /* 忽略 */ }
 }
 
-/** 清空缩略图目录内容。 */
+/** 清空缩略图目录内容（含所有子目录）。 */
 export function clearThumbDir(outDir: string): void {
   try {
     if (!fs.existsSync(outDir)) return;
@@ -645,9 +681,11 @@ export function resolveOriginalImagePath(imagePath: string): string {
   const m = imagePath.match(/^(.*[/\\])assets[/\\]images([/\\][^/\\]+)$/);
   if (!m) return imagePath;
   const rest = m[2]; const prefix = m[1];
+  // 优先主库 ok_templates（原始截图在此），再回退 ok_tasks/ok_templates
+  const rootOkTpls = prefix.replace(/ok_tasks[/\\]$/, '');
   const candidates = [
+    path.join(rootOkTpls, 'ok_templates', rest),
     path.join(prefix, 'ok_templates', rest),
-    path.join(prefix.replace(/ok_tasks[/\\]$/, ''), 'ok_templates', rest),
   ];
   for (const c of candidates) {
     try { if (fs.existsSync(c)) return c; } catch { /* 忽略 */ }
