@@ -5,7 +5,7 @@ import { LangData, poDirectorySetting } from './langData';
 import { tr } from './localization';
 import { FeatureData } from './featureData';
 import { EffectData } from './effectData';
-import { clearCropCache, clearThumbDir, warmCropCache, initCropWorkerPool, disposeCropWorkerPool, setCropLogger, THUMB_HEIGHT, thumbDirForSource, thumbSourceSubdir, clearSourceThumbs } from './pngCrop';
+import { clearCropCache, clearSourceCropCache, clearCropCacheForImage, removeTemplateThumbFile, clearThumbDir, warmCropCache, initCropWorkerPool, disposeCropWorkerPool, setCropLogger, THUMB_HEIGHT, thumbDirForSource, thumbSourceSubdir, clearSourceThumbs } from './pngCrop';
 import {
   LangCompletionProvider,
   LangHoverProvider,
@@ -80,21 +80,46 @@ export function activate(context: vscode.ExtensionContext): void {
     if (featTimer) clearTimeout(featTimer);
     featTimer = setTimeout(() => {
       features.refresh(true);
-      clearCropCache();
+      let cacheInvalidated = false;
       // 按变更文件的选择性清除：只清受影响来源的缩略图
       if (changedUris && changedUris.length > 0) {
         const sources = new Set<string>();
         for (const uri of changedUris) {
           sources.add(thumbSourceSubdir(uri.fsPath));
         }
-        for (const src of sources) clearSourceThumbs(thumbDir, src);
+        for (const src of sources) {
+          // ok_templates: 只清被改动 PNG 对应的缩略图，不影响同源其他 PNG
+          if (src === 'ok_templates') {
+            const pngRe = /\.png$/i;
+            const pngUris = changedUris.filter(u =>
+              u.fsPath.includes('ok_templates/') && pngRe.test(u.fsPath)
+            );
+            for (const uri of pngUris) {
+              clearCropCacheForImage(uri.fsPath);
+              for (const ft of features.all()) {
+                if (ft.imagePath === uri.fsPath) {
+                  removeTemplateThumbFile(ft.imagePath, ft.bbox, thumbDir);
+                  cacheInvalidated = true;
+                }
+              }
+            }
+            continue;
+          }
+          clearSourceCropCache(src);
+          clearSourceThumbs(thumbDir, src);
+          cacheInvalidated = true;
+        }
       } else {
         // 无变更信息时（如手动触发），清全部
+        clearCropCache();
         clearThumbDir(thumbDir);
+        cacheInvalidated = true;
       }
-      prewarm();
-      repaintAllGalleries();
-      CharacterManagerPanel.refreshCurrent();
+      if (cacheInvalidated) {
+        prewarm();
+        repaintAllGalleries();
+        CharacterManagerPanel.refreshCurrent();
+      }
     }, DEBOUNCE_MS);
   };
 
@@ -118,7 +143,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const effectsFile = (vscode.workspace.getConfiguration('okLangHints').get<string>('effectsFile') || 'src/data/effects.py')
       .replace(/[\\]+/g, '/')
       .replace(/^\//, '');
-    return `**/{assets/lang/*.json,${poGlob}/**/*.po,assets/coco_annotations.json,assets/images/*.png,ok_tasks/assets/coco_annotations.json,ok_tasks/assets/images/*.png,ok_templates/coco_annotations.json,ok_templates/*.png,${effectsFile}}`;
+    return `**/{assets/lang/*.json,${poGlob}/**/*.po,assets/coco_annotations.json,assets/images/*.png,ok_tasks/assets/coco_annotations.json,ok_tasks/assets/images/*.png,ok_templates/*.png,${effectsFile}}`;
   };
 
   /**
@@ -150,7 +175,6 @@ export function activate(context: vscode.ExtensionContext): void {
     if (
       rel === 'assets/coco_annotations.json' ||
       rel === 'ok_tasks/assets/coco_annotations.json' ||
-      rel === 'ok_templates/coco_annotations.json' ||
       (rel.startsWith('assets/images/') && pngRe.test(rel)) ||
       (rel.startsWith('ok_tasks/assets/images/') && pngRe.test(rel)) ||
       (rel.startsWith('ok_templates/') && pngRe.test(rel))
@@ -175,7 +199,7 @@ export function activate(context: vscode.ExtensionContext): void {
     watcher = vscode.workspace.createFileSystemWatcher(langWatchPattern());
     watcher.onDidChange((uri) => dispatchRefresh(getAffectedSources(uri), uri));
     watcher.onDidCreate((uri) => dispatchRefresh(getAffectedSources(uri), uri));
-    watcher.onDidDelete((uri) => dispatchRefresh(getAffectedSources(uri)));
+    watcher.onDidDelete((uri) => dispatchRefresh(getAffectedSources(uri), uri));
     return watcher;
   };
   recreateWatcher();

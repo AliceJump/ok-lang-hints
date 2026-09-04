@@ -412,6 +412,25 @@ export function clearCropCache(): void {
   CROP_CACHE.clear();
 }
 
+/** 仅清空指定来源的内存裁剪缓存（按 imagePath 路径匹配）。 */
+export function clearSourceCropCache(source: string): void {
+  for (const [key] of CROP_CACHE) {
+    const imagePath = key.split('|')[0];
+    if (thumbSourceSubdir(imagePath) === source) {
+      CROP_CACHE.delete(key);
+    }
+  }
+}
+
+/** 仅清空引用指定原图的内存裁剪缓存条目（精确到单张 PNG）。 */
+export function clearCropCacheForImage(imagePath: string): void {
+  for (const [key] of CROP_CACHE) {
+    if (key.split('|')[0] === imagePath) {
+      CROP_CACHE.delete(key);
+    }
+  }
+}
+
 /**
  * 从 imagePath 判断来源子目录。
  * ok_tasks/assets/images/X.png → 'ok_tasks'
@@ -579,9 +598,10 @@ export async function cropTemplateThumbFileAsync(
   imagePath: string, bbox: [number, number, number, number],
   outDir: string, targetHeight = THUMB_HEIGHT,
 ): Promise<string | undefined> {
-  // 按来源自动路由到子目录
+  // 按来源自动路由到子目录（srcDir 供 worker 使用）
   const srcDir = thumbDirForSource(outDir, imagePath);
-  const file = templateThumbFilePath(imagePath, bbox, srcDir, targetHeight);
+  // 注意：outDir 而非 srcDir —— templateThumbFilePath 内部会再调一次 thumbDirForSource
+  const file = templateThumbFilePath(imagePath, bbox, outDir, targetHeight);
   try {
     if (fs.existsSync(file) && fs.statSync(file).size > 0) return file;
   } catch { /* 重写 */ }
@@ -630,8 +650,7 @@ export function removeTemplateThumbFile(
   imagePath: string, bbox: [number, number, number, number],
   outDir: string, targetHeight = THUMB_HEIGHT,
 ): void {
-  const srcDir = thumbDirForSource(outDir, imagePath);
-  try { fs.rmSync(templateThumbFilePath(imagePath, bbox, srcDir, targetHeight), { force: true }); } catch { /* 忽略 */ }
+  try { fs.rmSync(templateThumbFilePath(imagePath, bbox, outDir, targetHeight), { force: true }); } catch { /* 忽略 */ }
 }
 
 /** 清空缩略图目录内容（含所有子目录）。 */
