@@ -2,7 +2,7 @@
   "name": "ok-lang-hints",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "publisher": "AliceJump",
   "license": "MIT",
   "icon": "icon.png",
