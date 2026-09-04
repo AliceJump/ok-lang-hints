@@ -140,7 +140,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const langWatchPattern = () => {
     const poDir = poDirectorySetting().replace(/[\/]+$/, '');
     const poGlob = poDir.split(/[\\/]/).map(escapeGlobSeg).join('/');
-    const effectsFile = (vscode.workspace.getConfiguration('okLangHints').get<string>('effectsFile') || 'src/data/effects.py')
+    const effectsFile = (vscode.workspace.getConfiguration('okScriptToolkit').get<string>('effectsFile') || 'src/data/effects.py')
       .replace(/[\\]+/g, '/')
       .replace(/^\//, '');
     return `**/{assets/lang/*.json,${poGlob}/**/*.po,assets/coco_annotations.json,assets/images/*.png,ok_tasks/assets/coco_annotations.json,ok_tasks/assets/images/*.png,ok_templates/*.png,${effectsFile}}`;
@@ -161,7 +161,7 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!rel) return empty;
 
     const poDir = poDirectorySetting().replace(/[\\]+/g, '/').replace(/\/+$/, '');
-    const effectsFile = (vscode.workspace.getConfiguration('okLangHints').get<string>('effectsFile') || 'src/data/effects.py')
+    const effectsFile = (vscode.workspace.getConfiguration('okScriptToolkit').get<string>('effectsFile') || 'src/data/effects.py')
       .replace(/[\\]+/g, '/')
       .replace(/^\//, '');
 
@@ -284,29 +284,29 @@ export function activate(context: vscode.ExtensionContext): void {
       TemplateAssetViewProvider.viewType,
       new TemplateAssetViewProvider(templateAssetData, thumbDir, context.extensionUri, context.globalState),
     ),
-    vscode.commands.registerCommand('okLangHints.showTemplates', () => {
+    vscode.commands.registerCommand('okScriptToolkit.showTemplates', () => {
       // 聚焦活动栏中的模板视图（左侧图标 Tab）
       void vscode.commands.executeCommand(`${TemplateGalleryViewProvider.viewType}.focus`);
     }),
-    vscode.commands.registerCommand('okLangHints.openTemplatesEditor', () => {
+    vscode.commands.registerCommand('okScriptToolkit.openTemplatesEditor', () => {
       TemplateGalleryPanel.show(features, thumbDir, context.extensionUri);
     }),
-    vscode.commands.registerCommand('okLangHints.showTaskLauncher', () => {
+    vscode.commands.registerCommand('okScriptToolkit.showTaskLauncher', () => {
       // 聚焦活动栏中的任务启动视图
       void vscode.commands.executeCommand(`${TaskLauncherViewProvider.viewType}.focus`);
     }),
-    vscode.commands.registerCommand('okLangHints.openCharacterManager', () => {
+    vscode.commands.registerCommand('okScriptToolkit.openCharacterManager', () => {
       CharacterManagerPanel.show(characterManagerDependencies);
     }),
-    vscode.commands.registerCommand('okLangHints.openTemplateAssets', () => {
+    vscode.commands.registerCommand('okScriptToolkit.openTemplateAssets', () => {
       TemplateAssetPanel.show(templateAssetData, thumbDir, context.extensionUri, context.globalState);
     }),
-    vscode.commands.registerCommand('okLangHints.openAnnotationEditor', () => {
+    vscode.commands.registerCommand('okScriptToolkit.openAnnotationEditor', () => {
       // 打开当前选中的图片，或者提示用户先选择
       void vscode.window.showInformationMessage(tr('Please click an image in the Template Assets panel to open the annotation editor.'));
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('okLangHints')) {
+      if (e.affectsConfiguration('okScriptToolkit')) {
         recreateWatcher();
         data.refresh(true);
         features.refresh(true);

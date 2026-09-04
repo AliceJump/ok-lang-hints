@@ -77,17 +77,17 @@ export function pickValue(entry: LangEntry, locale: string): string | undefined 
 
 /** PO 目录配置（相对工作区根，默认 i18n，按 <locale>/LC_MESSAGES/*.po 结构扫描） */
 export function poDirectorySetting(): string {
-  return vscode.workspace.getConfiguration('okLangHints').get<string>('poDirectory') || 'i18n';
+  return vscode.workspace.getConfiguration('okScriptToolkit').get<string>('poDirectory') || 'i18n';
 }
 
 /** 是否启用 gettext PO 数据源 */
 export function enablePoData(): boolean {
-  return vscode.workspace.getConfiguration('okLangHints').get<boolean>('enablePoData', true);
+  return vscode.workspace.getConfiguration('okScriptToolkit').get<boolean>('enablePoData', true);
 }
 
 /** PO domain 白名单（文件名不含 .po；默认只加载 ocr，排除 ok 等 UI 文案） */
 export function poDomainsSetting(): string[] {
-  const cfg = vscode.workspace.getConfiguration('okLangHints').get<string[]>('poDomains');
+  const cfg = vscode.workspace.getConfiguration('okScriptToolkit').get<string[]>('poDomains');
   return cfg && cfg.length ? cfg : ['ocr'];
 }
 
@@ -199,7 +199,7 @@ export class LangData {
   }
 
   private langDir(): string {
-    const rel = vscode.workspace.getConfiguration('okLangHints').get<string>('langDirectory') || 'assets/lang';
+    const rel = vscode.workspace.getConfiguration('okScriptToolkit').get<string>('langDirectory') || 'assets/lang';
     return path.join(this.rootDir, rel);
   }
 

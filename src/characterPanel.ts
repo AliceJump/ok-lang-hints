@@ -78,7 +78,7 @@ function getNonce(): string {
 }
 
 function resolveProjectDir(): string {
-  const configuration = vscode.workspace.getConfiguration('okLangHints');
+  const configuration = vscode.workspace.getConfiguration('okScriptToolkit');
   const explicit = configuration.get<string>('characterProjectPath')?.trim();
   const taskProject = configuration.get<string>('okScriptProjectPath')?.trim();
   const selected = explicit || taskProject;
@@ -95,7 +95,7 @@ function resolveProjectDir(): string {
 }
 
 function configuredPaths(projectDir: string): CharacterDataPaths {
-  const configuration = vscode.workspace.getConfiguration('okLangHints');
+  const configuration = vscode.workspace.getConfiguration('okScriptToolkit');
   return configuredCharacterDataPaths(projectDir, {
     masterFile: configuration.get<string>('characterMasterFile'),
     skillsDirectory: configuration.get<string>('characterSkillsDirectory'),
@@ -117,7 +117,7 @@ function samePath(first: string, second: string): boolean {
 }
 
 function avatarTemplateRegex(): RegExp | undefined {
-  const configured = vscode.workspace.getConfiguration('okLangHints')
+  const configured = vscode.workspace.getConfiguration('okScriptToolkit')
     .get<string>('characterAvatarTemplateRegex')?.trim() || DEFAULT_AVATAR_TEMPLATE_REGEX;
   try {
     return new RegExp(configured, 'i');
@@ -157,7 +157,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
       return;
     }
     const panel = vscode.window.createWebviewPanel(
-      'okLangHintsCharacterManager',
+      'okScriptToolkitCharacterManager',
       tr('Character & Skill Manager'),
       vscode.ViewColumn.One,
       {
@@ -197,13 +197,13 @@ export class CharacterManagerPanel implements vscode.Disposable {
       panel.onDidDispose(() => this.dispose()),
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (
-          event.affectsConfiguration('okLangHints.characterProjectPath') ||
-          event.affectsConfiguration('okLangHints.characterMasterFile') ||
-          event.affectsConfiguration('okLangHints.characterSkillsDirectory') ||
-          event.affectsConfiguration('okLangHints.characterLocaleFile') ||
-          event.affectsConfiguration('okLangHints.characterAvatarTemplateRegex') ||
-          event.affectsConfiguration('okLangHints.effectsFile') ||
-          event.affectsConfiguration('okLangHints.okScriptProjectPath')
+          event.affectsConfiguration('okScriptToolkit.characterProjectPath') ||
+          event.affectsConfiguration('okScriptToolkit.characterMasterFile') ||
+          event.affectsConfiguration('okScriptToolkit.characterSkillsDirectory') ||
+          event.affectsConfiguration('okScriptToolkit.characterLocaleFile') ||
+          event.affectsConfiguration('okScriptToolkit.characterAvatarTemplateRegex') ||
+          event.affectsConfiguration('okScriptToolkit.effectsFile') ||
+          event.affectsConfiguration('okScriptToolkit.okScriptProjectPath')
         ) {
           void this.update(true);
         }
@@ -551,7 +551,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
       this.disposeWatchers();
       await this.panel.webview.postMessage({
         type: 'error',
-        text: tr('No character data project was found. Configure okLangHints.characterProjectPath or okLangHints.okScriptProjectPath.'),
+        text: tr('No character data project was found. Configure okScriptToolkit.characterProjectPath or okScriptToolkit.okScriptProjectPath.'),
       });
       return;
     }
@@ -729,7 +729,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
 
 /** 侧边栏中的单按钮入口；大面板仍在编辑器区打开。 */
 export class CharacterManagerLauncherViewProvider implements vscode.WebviewViewProvider {
-  static readonly viewType = 'okLangHints.toolbox';
+  static readonly viewType = 'okScriptToolkit.toolbox';
 
   constructor(private readonly dependencies: CharacterManagerDependencies) {}
 

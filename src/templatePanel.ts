@@ -211,7 +211,7 @@ class GalleryController {
 /* ---------------- 侧边栏视图（活动栏图标点开） ---------------- */
 
 export class TemplateGalleryViewProvider implements vscode.WebviewViewProvider {
-  public static readonly viewType = 'okLangHints.templateGallery';
+  public static readonly viewType = 'okScriptToolkit.templateGallery';
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -256,7 +256,7 @@ export class TemplateGalleryPanel {
       return;
     }
     const panel = vscode.window.createWebviewPanel(
-      'okLangHintsTemplates',
+      'okScriptToolkitTemplates',
       tr('Template Gallery'),
       vscode.ViewColumn.Beside,
       {

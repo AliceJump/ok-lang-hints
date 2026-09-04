@@ -68,7 +68,7 @@ export class EffectData {
 
   private effectsFile(): string {
     const rel =
-      vscode.workspace.getConfiguration('okLangHints').get<string>('effectsFile') ||
+      vscode.workspace.getConfiguration('okScriptToolkit').get<string>('effectsFile') ||
       'src/data/effects.py';
     return path.join(this.rootDir, rel);
   }

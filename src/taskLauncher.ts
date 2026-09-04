@@ -247,7 +247,7 @@ async function probeTaskSchemas(
 
 /** 侧边栏任务启动视图 */
 export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
-  public static readonly viewType = 'okLangHints.taskLauncher';
+  public static readonly viewType = 'okScriptToolkit.taskLauncher';
 
   private readonly output: vscode.OutputChannel;
   private running = false;
@@ -435,7 +435,7 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
    * 配置未填写时，自动检测当前工作区根目录（若含 src/config.py 则视为 ok-script 项目）。
    */
   private getConfig(): { projectDir: string; pythonPath: string; fromConfig: boolean } {
-    const cfg = vscode.workspace.getConfiguration('okLangHints');
+    const cfg = vscode.workspace.getConfiguration('okScriptToolkit');
     let projectDir = cfg.get<string>('okScriptProjectPath') || '';
     let fromConfig = true;
     projectDir = projectDir.replace(/^~/, process.env.USERPROFILE || '');
@@ -469,7 +469,7 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
       void view.webview.postMessage({
         type: 'status',
         level: 'warn',
-        text: tr('No ok-script project was found. Configure okLangHints.okScriptProjectPath or open a folder containing src/config.py.'),
+        text: tr('No ok-script project was found. Configure okScriptToolkit.okScriptProjectPath or open a folder containing src/config.py.'),
       });
       return;
     }
@@ -524,7 +524,7 @@ export class TaskLauncherViewProvider implements vscode.WebviewViewProvider {
     locale: string,
     generation: number,
   ): Promise<void> {
-    const poDirectory = vscode.workspace.getConfiguration('okLangHints').get<string>('poDirectory') || 'i18n';
+    const poDirectory = vscode.workspace.getConfiguration('okScriptToolkit').get<string>('poDirectory') || 'i18n';
     const probe = await probeTaskSchemas(
       this.extensionUri,
       projectDir,

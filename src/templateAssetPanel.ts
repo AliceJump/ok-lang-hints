@@ -62,9 +62,9 @@ async function probeWindowConfig(projectDir: string, pythonPath: string): Promis
   return undefined;
 }
 
-/** 读取 okLangHints 扩展配置中的项目路径和 Python 解释器 */
+/** 读取 okScriptToolkit 扩展配置中的项目路径和 Python 解释器 */
 function getProjectConfig(): { projectDir: string; pythonPath: string } {
-  const cfg = vscode.workspace.getConfiguration('okLangHints');
+  const cfg = vscode.workspace.getConfiguration('okScriptToolkit');
   let projectDir = cfg.get<string>('okScriptProjectPath') || '';
   projectDir = projectDir.replace(/^~/, process.env.USERPROFILE || '');
   projectDir = projectDir.replace(/[\\/]+$/, '');
@@ -336,7 +336,7 @@ class AssetGalleryController {
     if (!pick) return;
 
     // 读取上次输入的 enum 文件路径，回退到默认值
-    const defaultEnumPath = this.globalState?.get<string>('okLangHints.lastEnumFilePath') || '';
+    const defaultEnumPath = this.globalState?.get<string>('okScriptToolkit.lastEnumFilePath') || '';
     const enumFilePath = await vscode.window.showInputBox({
       prompt: tr('LabelEnum.py file path (relative to workspace root, leave empty to skip)'),
       placeHolder: tr('e.g. assets/data/LabelEnum.py or src/label_enum.py'),
@@ -350,7 +350,7 @@ class AssetGalleryController {
 
     // 记住本次输入的路径
     if (this.globalState) {
-      void this.globalState.update('okLangHints.lastEnumFilePath', trimmedEnumPath);
+      void this.globalState.update('okScriptToolkit.lastEnumFilePath', trimmedEnumPath);
     }
 
     try {
@@ -436,7 +436,7 @@ function readPngDimensions(buf: Buffer): { width: number; height: number } {
 /* ---------------- 侧边栏视图 ---------------- */
 
 export class TemplateAssetViewProvider implements vscode.WebviewViewProvider {
-  public static readonly viewType = 'okLangHints.templateAssets';
+  public static readonly viewType = 'okScriptToolkit.templateAssets';
 
   constructor(
     private readonly data: TemplateAssetData,
@@ -476,7 +476,7 @@ export class TemplateAssetPanel {
       return;
     }
     const panel = vscode.window.createWebviewPanel(
-      'okLangHintsTemplateAssets',
+      'okScriptToolkitTemplateAssets',
       tr('Template Assets'),
       vscode.ViewColumn.Beside,
       {

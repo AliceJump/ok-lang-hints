@@ -23,7 +23,7 @@ function escapeRegExp(s: string): string {
 
 /** 可配置的 FeatureList 别名，如 fL / FeatureList */
 export function featureAliases(): string[] {
-  const cfg = vscode.workspace.getConfiguration('okLangHints').get<string[]>('featureAliases');
+  const cfg = vscode.workspace.getConfiguration('okScriptToolkit').get<string[]>('featureAliases');
   return cfg && cfg.length ? cfg : ['fL', 'FeatureList'];
 }
 
@@ -255,7 +255,7 @@ export function findOcrMatchRefs(line: string): OcrMatchRef[] {
 
 /** 当前显示的 locale（auto 跟随 UI 语言） */
 export function currentLocale(): string {
-  const d = vscode.workspace.getConfiguration('okLangHints').get<string>('displayLocale') || 'auto';
+  const d = vscode.workspace.getConfiguration('okScriptToolkit').get<string>('displayLocale') || 'auto';
   return d === 'auto' ? normalizeLocale(vscode.env.language) : d;
 }
 
@@ -330,7 +330,7 @@ export class LangInlayHintsProvider implements vscode.InlayHintsProvider {
     range: vscode.Range,
     token: vscode.CancellationToken,
   ): vscode.InlayHint[] {
-    if (!vscode.workspace.getConfiguration('okLangHints').get<boolean>('enableInlayHints', true)) {
+    if (!vscode.workspace.getConfiguration('okScriptToolkit').get<boolean>('enableInlayHints', true)) {
       return [];
     }
     const locale = currentLocale();

@@ -46,7 +46,7 @@ class AnnotationController {
 
   /** 读取扩展设置并发送快捷键配置到 webview */
   private sendKeybindings(): void {
-    const cfg = vscode.workspace.getConfiguration('okLangHints');
+    const cfg = vscode.workspace.getConfiguration('okScriptToolkit');
     const kb = cfg.get<Record<string, string>>('annotationKeybindings');
     if (kb) {
       void this.webview.postMessage({ type: 'config', keybindings: kb });
@@ -191,7 +191,7 @@ export class AnnotationPanel {
       return;
     }
     const panel = vscode.window.createWebviewPanel(
-      'okLangHintsAnnotation',
+      'okScriptToolkitAnnotation',
       tr('Annotation Editor'),
       vscode.ViewColumn.Beside,
       {

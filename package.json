@@ -1,5 +1,5 @@
 {
-  "name": "ok-lang-hints",
+  "name": "ok-script-toolkit",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
   "version": "0.6.0",
@@ -42,32 +42,32 @@
   "contributes": {
     "commands": [
       {
-        "command": "okLangHints.showTemplates",
+        "command": "okScriptToolkit.showTemplates",
         "title": "%command.showTemplates%",
         "category": "%command.category%"
       },
       {
-        "command": "okLangHints.openTemplatesEditor",
+        "command": "okScriptToolkit.openTemplatesEditor",
         "title": "%command.openTemplatesEditor%",
         "category": "%command.category%"
       },
       {
-        "command": "okLangHints.showTaskLauncher",
+        "command": "okScriptToolkit.showTaskLauncher",
         "title": "%command.showTaskLauncher%",
         "category": "%command.category%"
       },
       {
-        "command": "okLangHints.openCharacterManager",
+        "command": "okScriptToolkit.openCharacterManager",
         "title": "%command.openCharacterManager%",
         "category": "%command.category%"
       },
       {
-        "command": "okLangHints.openTemplateAssets",
+        "command": "okScriptToolkit.openTemplateAssets",
         "title": "%command.openTemplateAssets%",
         "category": "%command.category%"
       },
       {
-        "command": "okLangHints.openAnnotationEditor",
+        "command": "okScriptToolkit.openAnnotationEditor",
         "title": "%command.openAnnotationEditor%",
         "category": "%command.category%"
       }
@@ -90,14 +90,14 @@
       "okTools": [
         {
           "type": "webview",
-          "id": "okLangHints.toolbox",
+          "id": "okScriptToolkit.toolbox",
           "name": "%view.toolbox%",
           "title": "%view.toolbox.title%",
           "icon": "media/icons/toolbox.svg"
         },
         {
           "type": "webview",
-          "id": "okLangHints.taskLauncher",
+          "id": "okScriptToolkit.taskLauncher",
           "name": "%view.taskLauncher%",
           "title": "%view.taskLauncher.title%",
           "icon": "media/icons/task.svg",
@@ -109,7 +109,7 @@
       "okTemplates": [
         {
           "type": "webview",
-          "id": "okLangHints.templateGallery",
+          "id": "okScriptToolkit.templateGallery",
           "name": "%view.templateGallery%",
           "title": "%view.templateGallery.title%",
           "icon": "media/icons/templates.svg",
@@ -119,7 +119,7 @@
         },
         {
           "type": "webview",
-          "id": "okLangHints.templateAssets",
+          "id": "okScriptToolkit.templateAssets",
           "name": "%view.templateAssets%",
           "title": "%view.templateAssets.title%",
           "icon": "media/icons/templates.svg",
@@ -131,7 +131,7 @@
     },
     "keybindings": [
       {
-        "command": "okLangHints.showTemplates",
+        "command": "okScriptToolkit.showTemplates",
         "key": "ctrl+alt+t",
         "mac": "cmd+alt+t",
         "when": "editorLangId == python"
@@ -140,22 +140,22 @@
     "configuration": {
       "title": "%configuration.title%",
       "properties": {
-        "okLangHints.langDirectory": {
+        "okScriptToolkit.langDirectory": {
           "type": "string",
           "default": "assets/lang",
           "description": "%config.langDirectory%"
         },
-        "okLangHints.poDirectory": {
+        "okScriptToolkit.poDirectory": {
           "type": "string",
           "default": "i18n",
           "description": "%config.poDirectory%"
         },
-        "okLangHints.enablePoData": {
+        "okScriptToolkit.enablePoData": {
           "type": "boolean",
           "default": true,
           "description": "%config.enablePoData%"
         },
-        "okLangHints.poDomains": {
+        "okScriptToolkit.poDomains": {
           "type": "array",
           "items": {
             "type": "string"
@@ -165,7 +165,7 @@
           ],
           "description": "%config.poDomains%"
         },
-        "okLangHints.displayLocale": {
+        "okScriptToolkit.displayLocale": {
           "type": "string",
           "default": "auto",
           "enum": [
@@ -179,12 +179,12 @@
           ],
           "description": "%config.displayLocale%"
         },
-        "okLangHints.enableInlayHints": {
+        "okScriptToolkit.enableInlayHints": {
           "type": "boolean",
           "default": true,
           "description": "%config.enableInlayHints%"
         },
-        "okLangHints.featureAliases": {
+        "okScriptToolkit.featureAliases": {
           "type": "array",
           "items": {
             "type": "string"
@@ -195,52 +195,52 @@
           ],
           "description": "%config.featureAliases%"
         },
-        "okLangHints.effectsFile": {
+        "okScriptToolkit.effectsFile": {
           "type": "string",
           "default": "src/data/effects.py",
           "description": "%config.effectsFile%"
         },
-        "okLangHints.okScriptProjectPath": {
+        "okScriptToolkit.okScriptProjectPath": {
           "type": "string",
           "default": "",
           "markdownDescription": "%config.okScriptProjectPath%"
         },
-        "okLangHints.okScriptPython": {
+        "okScriptToolkit.okScriptPython": {
           "type": "string",
           "default": "",
           "markdownDescription": "%config.okScriptPython%"
         },
-        "okLangHints.characterProjectPath": {
+        "okScriptToolkit.characterProjectPath": {
           "type": "string",
           "default": "",
           "markdownDescription": "%config.characterProjectPath%"
         },
-        "okLangHints.characterMasterFile": {
+        "okScriptToolkit.characterMasterFile": {
           "type": "string",
           "default": "assets/data/characters.json",
           "description": "%config.characterMasterFile%"
         },
-        "okLangHints.characterSkillsDirectory": {
+        "okScriptToolkit.characterSkillsDirectory": {
           "type": "string",
           "default": "assets/data/character_skills",
           "description": "%config.characterSkillsDirectory%"
         },
-        "okLangHints.characterLocaleFile": {
+        "okScriptToolkit.characterLocaleFile": {
           "type": "string",
           "default": "assets/lang/characters.json",
           "description": "%config.characterLocaleFile%"
         },
-        "okLangHints.characterAvatarTemplateRegex": {
+        "okScriptToolkit.characterAvatarTemplateRegex": {
           "type": "string",
           "default": "^battle[_-]?icon[_-]?",
           "description": "%config.characterAvatarTemplateRegex%"
         },
-        "okLangHints.okTemplatesDirectory": {
+        "okScriptToolkit.okTemplatesDirectory": {
           "type": "string",
           "default": "ok_templates",
           "description": "%config.okTemplatesDirectory%"
         },
-        "okLangHints.annotationKeybindings": {
+        "okScriptToolkit.annotationKeybindings": {
           "type": "object",
           "default": {
             "drawBbox": "r",

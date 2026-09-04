@@ -94,7 +94,7 @@ export class EffectInlayHintsProvider implements vscode.InlayHintsProvider {
     range: vscode.Range,
     token: vscode.CancellationToken,
   ): vscode.InlayHint[] {
-    if (!vscode.workspace.getConfiguration('okLangHints').get<boolean>('enableInlayHints', true)) {
+    if (!vscode.workspace.getConfiguration('okScriptToolkit').get<boolean>('enableInlayHints', true)) {
       return [];
     }
     const hints: vscode.InlayHint[] = [];
