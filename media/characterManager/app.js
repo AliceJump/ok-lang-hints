@@ -208,12 +208,12 @@ function showModal(title, build, onSubmit, saveText) {
 }
 function closeModal() { $('modalBackdrop').classList.remove('show'); $('modalError').textContent = ''; modalSubmit = null; }
 function submitModal() { if (!modalSubmit) return; try { modalSubmit(); } catch (error) { $('modalError').textContent = error.message || String(error); } }
-function skillTypeOptions() { return ['普通攻击', '战技', '连携技', '终结技', '天赋', '潜能']; }
+function skillTypeOptions() { return [t('skillTypeNormalAttack'), t('skillTypeSkill'), t('skillTypeCombo'), t('skillTypeUltimate'), t('skillTypeTalent'), t('skillTypePotential')]; }
 
 function showSkillEditor(character, skill) {
   const editing = !!skill;
   const synced = editing && skill.source !== 'custom';
-  const value = skill || { skillId: `${character.characterId}_skill`, name: '', skillType: '战技', element: character.element, description: '', damageMultiplier: '', staggerValue: 0, cooldown: '', spiritCost: 0, effects: [] };
+  const value = skill || { skillId: `${character.characterId}_skill`, name: '', skillType: t('skillTypeSkill'), element: character.element, description: '', damageMultiplier: '', staggerValue: 0, cooldown: '', spiritCost: 0, effects: [] };
   showModal(editing ? t('modifySkill') : t('addSkill'), (form) => {
     const controls = {
       skillId: inputControl(value.skillId), name: inputControl(value.name), skillType: selectControl(value.skillType, skillTypeOptions()),

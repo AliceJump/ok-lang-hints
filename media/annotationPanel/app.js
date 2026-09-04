@@ -105,8 +105,8 @@
   function updateUndoRedoButtons() {
     const undoBtn = document.getElementById('undoBtn');
     const redoBtn = document.getElementById('redoBtn');
-    if (undoBtn) { undoBtn.disabled = !undoStack.length; undoBtn.title = 'Undo (' + keybindings.undo + ')'; }
-    if (redoBtn) { redoBtn.disabled = !redoStack.length; redoBtn.title = 'Redo (' + keybindings.redo + ')'; }
+    if (undoBtn) { undoBtn.disabled = !undoStack.length; undoBtn.title = t('undo') + ' (' + keybindings.undo + ')'; }
+    if (redoBtn) { redoBtn.disabled = !redoStack.length; redoBtn.title = t('redo') + ' (' + keybindings.redo + ')'; }
   }
 
   function updateButtonTexts() {
@@ -589,7 +589,7 @@
       if (!name) { errorEl.textContent = t('categoryRequired'); return false; }
       const existing = imageData?.allCategories || {};
       if (name !== category && existing[name]) {
-        errorEl.textContent = "Already exists in '" + existing[name] + "'";
+        errorEl.textContent = t('categoryExists', { file: existing[name] });
         return false;
       }
       errorEl.textContent = '';

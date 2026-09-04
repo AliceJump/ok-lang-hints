@@ -240,7 +240,7 @@ class AssetGalleryController {
       // 回退：让用户手动输入窗口标题正则
       titleRegex = await vscode.window.showInputBox({
         prompt: tr('Enter game window title pattern (regex), or leave empty for all windows'),
-        placeHolder: 'e.g. EndField|Unity',
+        placeHolder: tr('screenshotWindowPlaceholder'),
       });
       if (titleRegex === undefined) return; // user cancelled
     }
@@ -325,8 +325,8 @@ class AssetGalleryController {
       return;
     }
     const targets = [
-      { label: 'assets', description: 'standalone app', folder: path.join(folder.uri.fsPath, 'assets') },
-      { label: 'ok_tasks/assets', description: 'custom scripts', folder: path.join(folder.uri.fsPath, 'ok_tasks', 'assets') },
+      { label: 'assets', description: tr('saveToAssetsStandaloneApp'), folder: path.join(folder.uri.fsPath, 'assets') },
+      { label: 'ok_tasks/assets', description: tr('saveToAssetsCustomScripts'), folder: path.join(folder.uri.fsPath, 'ok_tasks', 'assets') },
     ];
 
     const pick = await vscode.window.showQuickPick(
@@ -386,7 +386,7 @@ class AssetGalleryController {
       canSelectFiles: true,
       canSelectFolders: false,
       canSelectMany: true,
-      filters: { Images: ['png', 'jpg', 'jpeg', 'bmp', 'webp'] },
+      filters: { [tr('importImagesFilter')]: ['png', 'jpg', 'jpeg', 'bmp', 'webp'] },
       title: tr('Import images to ok_templates'),
     });
     if (!uris || uris.length === 0) return;

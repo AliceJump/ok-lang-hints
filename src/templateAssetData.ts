@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { decodeRgba, encodePngRgb } from './pngCrop';
+import { tr } from './localization';
 
 /* ---------------- COCO 数据类型 ---------------- */
 
@@ -61,7 +62,7 @@ export class TemplateAssetData {
   /** Add an image file to COCO data (static helper for external callers). */
   static async addImageToCoco(imagePath: string): Promise<void> {
     const folder = vscode.workspace.workspaceFolders?.[0];
-    if (!folder) throw new Error('No workspace folder');
+    if (!folder) throw new Error(tr('noWorkspaceFolder'));
     const data = new TemplateAssetData(folder);
     await data.load();
     data.addImageEntry(imagePath, 0, 0);

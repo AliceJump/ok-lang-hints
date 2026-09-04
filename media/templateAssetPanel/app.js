@@ -110,7 +110,7 @@
     });
     img.addEventListener('error', () => {
       const ph = card.querySelector('.placeholder');
-      if (ph) { ph.textContent = 'fail'; ph.style.opacity = '.8'; }
+      if (ph) { ph.textContent = t('loadFailed'); ph.style.opacity = '.8'; }
     });
     card.querySelector('.thumb-box').prepend(img);
   }

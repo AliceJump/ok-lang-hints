@@ -456,7 +456,7 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
           addIssue('error', 'missing-skill-id', tr('Skill {index} for {character} is missing skill_id', { character: characterName, index: skillIndex + 1 }), { ...source, skillId });
         }
         const skillName = stringValue(rawSkill['name'], skillId);
-        const skillType = stringValue(rawSkill['skill_type'], '未分类');
+        const skillType = stringValue(rawSkill['skill_type'], tr('uncategorized'));
         const skillSource: CharacterIssueSource = { ...source, skillId };
         const duplicate = globalSkillIds.get(skillId);
         if (duplicate) {
@@ -511,7 +511,7 @@ export function loadCharacterManagerData(paths: CharacterDataPaths): CharacterDa
         for (let enhancementIndex = 0; enhancementIndex < rawEnhancements.length; enhancementIndex++) {
           const rawEnhancement = rawEnhancements[enhancementIndex];
           if (!isObject(rawEnhancement)) continue;
-          const enhancementName = stringValue(rawEnhancement['name'], `强化 ${enhancementIndex + 1}`);
+          const enhancementName = stringValue(rawEnhancement['name'], tr('enhancementFallbackName', { index: enhancementIndex + 1 }));
           const triggerRaw = rawEnhancement['trigger_condition'];
           let triggerText = '';
           let triggerIds: string[] = [];

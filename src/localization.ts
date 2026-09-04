@@ -247,6 +247,21 @@ const ZH_CN: WebviewStrings = {
   prevImage: '上一张图片',
   nextImage: '下一张图片',
   noImageLoaded: '未加载图片',
+  saveToAssetsStandaloneApp: '独立应用',
+  saveToAssetsCustomScripts: '自定义脚本',
+  screenshotWindowPlaceholder: '例如 EndField|Unity',
+  importImagesFilter: '图片',
+  undo: '撤销',
+  redo: '重做',
+  uncategorized: '未分类',
+  enhancementFallbackName: '强化 {index}',
+  skillTypeNormalAttack: '普通攻击',
+  skillTypeSkill: '战技',
+  skillTypeCombo: '连携技',
+  skillTypeUltimate: '终结技',
+  skillTypeTalent: '天赋',
+  skillTypePotential: '潜能',
+  noWorkspaceFolder: '未打开工作区',
 };
 
 const EN: WebviewStrings = {
@@ -264,6 +279,21 @@ const EN: WebviewStrings = {
   prevImage: 'Previous image',
   nextImage: 'Next image',
   noImageLoaded: 'No image loaded',
+  saveToAssetsStandaloneApp: 'standalone app',
+  saveToAssetsCustomScripts: 'custom scripts',
+  screenshotWindowPlaceholder: 'e.g. EndField|Unity',
+  importImagesFilter: 'Images',
+  undo: 'Undo',
+  redo: 'Redo',
+  uncategorized: 'Uncategorized',
+  enhancementFallbackName: 'Enhancement {index}',
+  skillTypeNormalAttack: 'Normal Attack',
+  skillTypeSkill: 'Skill',
+  skillTypeCombo: 'Combo',
+  skillTypeUltimate: 'Ultimate',
+  skillTypeTalent: 'Talent',
+  skillTypePotential: 'Potential',
+  noWorkspaceFolder: 'No workspace folder',
 };
 
 const ZH_TW: WebviewStrings = {
