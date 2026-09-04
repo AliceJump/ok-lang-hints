@@ -69,13 +69,14 @@
 ### 插件界面语言
 
 - 扩展清单、通知、输出频道、hover、模板面板、任务启动器、工具箱和角色技能管理面板均支持简体中文、繁体中文、英文、日文、韩文和西班牙文。
+- 侧边栏分为两个独立容器：**ok-script 工具**（工具箱 + 任务启动）和 **ok-script 模板**（模板面板 + 模板素材），各自显示独立的视图名称。
 - 插件 UI 默认跟随 VS Code 显示语言；其他语言回退英文。角色名称矩阵和项目业务数据仍使用目标项目自身的 locale 与原始协议值。
 
 ### 模板面板（可视化浏览全部模板）
 
 两种打开方式：
 
-1. **侧边栏视图（推荐）**：点击左侧活动栏的"ok-script 模板"图标（网格样式），即可展开模板面板；也可执行命令 **ok-script Lang Hints: 打开模板面板**（快捷键 `Ctrl+Alt+T`）聚焦该视图。
+1. **侧边栏视图（推荐）**：点击左侧活动栏的"ok-script 模板"图标，即可展开模板面板（包含模板面板和模板素材两个视图）；也可执行命令 **ok-script Lang Hints: 打开模板面板**（快捷键 `Ctrl+Alt+T`）聚焦该视图。
 2. **编辑器大窗口**：执行命令 **ok-script Lang Hints: 在编辑器中打开模板面板（大窗口）**，在编辑器区打开更大的网格视图。
 
 面板功能：
@@ -109,9 +110,13 @@
 ```text
 src/                         VS Code 扩展宿主 TypeScript 源码
 media/
-	icons/                     活动栏与视图图标
+	icons/                     活动栏与视图图标（templates.svg、toolbox.svg、task.svg）
+	annotationPanel/           标注编辑器 Webview（index.html、CSS、交互脚本）
+	templateAssetPanel/        模板素材管理 Webview（index.html、CSS、交互脚本）
+	templateGallery/           模板面板 Webview（index.html、CSS、交互脚本）
 	taskLauncher/              任务启动器 Webview（index.html、CSS、组件脚本）
 	characterManager/          角色技能管理 Webview（index.html、CSS、交互脚本）
+	pngCropWorker.ts           Worker 线程：sharp 原生图像裁剪
 python/                      随扩展发布的任务发现、探测与执行辅助脚本
 scripts/                     开发期生成与回归测试工具，不打入 VSIX
 l10n/                        扩展宿主运行时本地化资源
