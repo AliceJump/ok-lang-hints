@@ -163,7 +163,7 @@ function test_nonOverlappingBboxesPackToSamePage() {
     assert(annA.image_id === annB.image_id,
       'both annotations should point to same packed image');
 
-    const packedPath = path.join(targetDir, 'images', packedImg.file_name);
+    const packedPath = path.join(targetDir, packedImg.file_name);
     assert(fs.existsSync(packedPath), 'packed PNG file should exist');
     const packedBuf = fs.readFileSync(packedPath);
     assert(packedBuf.readUInt32BE(16) === 100 && packedBuf.readUInt32BE(20) === 100,
@@ -355,7 +355,8 @@ function test_readFromJsonCompatibility() {
     )?.file_name;
     assert(packedFileName, 'should have a packed image with annotations');
 
-    const packedPath = path.join(targetDir, 'images', packedFileName);
+    // file_name 现在是相对路径（如 "images/1.png"），从 targetDir 拼接
+    const packedPath = path.join(targetDir, packedFileName);
     assert(fs.existsSync(packedPath), 'packed image should exist');
 
     const { decodeRgba } = require('../out/pngCrop');
