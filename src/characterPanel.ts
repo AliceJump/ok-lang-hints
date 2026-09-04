@@ -12,10 +12,11 @@ import { FeatureData, FeatureTemplate } from './featureData';
 import { injectWebviewLocalization, tr, webviewStrings } from './localization';
 import {
   clearCropCache,
-  cropTemplateThumbFile,
+  cropTemplateThumbFileAsync,
   removeTemplateThumbFile,
   templateThumbFilePath,
   warmCropCache,
+  THUMB_HEIGHT,
 } from './pngCrop';
 
 export interface CharacterManagerDependencies {
@@ -606,7 +607,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
       selected.push({ characterId: character.characterId, template });
     }
     const missing = selected.filter(({ template }) => {
-      const file = templateThumbFilePath(template.imagePath, template.bbox, this.dependencies.thumbDir, 96);
+      const file = templateThumbFilePath(template.imagePath, template.bbox, this.dependencies.thumbDir, THUMB_HEIGHT);
       try {
         return !fs.existsSync(file) || fs.statSync(file).size <= 0;
       } catch {
@@ -616,10 +617,11 @@ export class CharacterManagerPanel implements vscode.Disposable {
     await warmCropCache(missing.map(({ template }) => ({
       imagePath: template.imagePath,
       bbox: template.bbox,
-      targetHeight: 96,
+      targetHeight: THUMB_HEIGHT,
+      thumbDir: this.dependencies.thumbDir,
     })));
     for (const { characterId, template } of selected) {
-      const file = cropTemplateThumbFile(template.imagePath, template.bbox, this.dependencies.thumbDir, 96);
+      const file = await cropTemplateThumbFileAsync(template.imagePath, template.bbox, this.dependencies.thumbDir, THUMB_HEIGHT);
       if (file) avatars[characterId] = this.panel.webview.asWebviewUri(vscode.Uri.file(file)).toString(true);
     }
     return avatars;
@@ -628,7 +630,7 @@ export class CharacterManagerPanel implements vscode.Disposable {
   private invalidateAvatarThumbs(features: FeatureData): void {
     clearCropCache();
     for (const template of avatarTemplateIndex(features).matched) {
-      removeTemplateThumbFile(template.imagePath, template.bbox, this.dependencies.thumbDir, 96);
+      removeTemplateThumbFile(template.imagePath, template.bbox, this.dependencies.thumbDir, THUMB_HEIGHT);
     }
   }
 

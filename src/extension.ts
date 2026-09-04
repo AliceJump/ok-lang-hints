@@ -4,7 +4,7 @@ import { LangData, poDirectorySetting } from './langData';
 import { tr } from './localization';
 import { FeatureData } from './featureData';
 import { EffectData } from './effectData';
-import { clearCropCache, clearThumbDir, warmCropCache } from './pngCrop';
+import { clearCropCache, clearThumbDir, warmCropCache, initCropWorkerPool, disposeCropWorkerPool, setCropLogger, THUMB_HEIGHT } from './pngCrop';
 import {
   LangCompletionProvider,
   LangHoverProvider,
@@ -35,11 +35,20 @@ export function activate(context: vscode.ExtensionContext): void {
   // 模板缩略图 PNG 落盘目录（webview 经 asWebviewUri 加载）
   const thumbDir = path.join(context.globalStorageUri.fsPath, 'template-thumbs');
 
+  // 性能日志输出通道：查看 → 输出 → ok-lang-hints
+  const cropLog = vscode.window.createOutputChannel('ok-lang-hints');
+  setCropLogger((msg) => cropLog.appendLine(msg));
+
+  // 初始化 worker 线程池（sharp 原生图像处理，主线程零阻塞）
+  initCropWorkerPool(context.extensionPath);
+
   // 后台预热：把全部模板缩略图裁进缓存，后续 hover/补全直接命中
   const prewarm = () => {
     const reqs = features.all().map((ft) => ({
       imagePath: ft.imagePath,
       bbox: ft.bbox,
+      targetHeight: THUMB_HEIGHT,
+      thumbDir,
     }));
     void warmCropCache(reqs);
   };
@@ -155,6 +164,7 @@ export function activate(context: vscode.ExtensionContext): void {
   recreateWatcher();
   context.subscriptions.push({
     dispose: () => {
+      disposeCropWorkerPool();
       watcher?.dispose();
       watcher = undefined;
       if (langTimer) clearTimeout(langTimer);

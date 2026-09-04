@@ -2,7 +2,23 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as zlib from 'zlib';
+import { Worker } from 'worker_threads';
 import { findOkTemplateOriginal } from './featureData';
+
+/** 模板缩略图统一高度（面板/缓存/worker 共用，消除 key 不匹配） */
+export const THUMB_HEIGHT = 96;
+
+/* ========================================================================
+ *  性能日志
+ * ======================================================================== */
+
+let _log: ((msg: string) => void) | undefined;
+
+/** 由 extension.ts 在激活时注入 */
+export function setCropLogger(log: (msg: string) => void): void { _log = log; }
+
+function log(msg: string): void { _log?.(`[pngCrop] ${msg}`); }
+function logT(tag: string, t0: number): void { log(`${tag} ${(performance.now() - t0).toFixed(1)}ms`); }
 
 /** 极简 PNG 解码/裁剪/编码：从原图按 bbox 裁出模板小图，返回 data URL。 */
 
@@ -74,11 +90,11 @@ function parsePng(buf: Buffer): { meta: PngMeta; idat: Buffer } {
 /** 每像素字节数（仅 8-bit 及常见格式） */
 function bytesPerPixel(colorType: number): number {
   switch (colorType) {
-    case 0: return 1; // 灰度
-    case 2: return 3; // RGB
-    case 3: return 1; // 调色板索引
-    case 4: return 2; // 灰度+alpha
-    case 6: return 4; // RGBA
+    case 0: return 1;
+    case 2: return 3;
+    case 3: return 1;
+    case 4: return 2;
+    case 6: return 4;
     default: throw new Error(`unsupported colorType ${colorType}`);
   }
 }
@@ -93,17 +109,15 @@ function paeth(a: number, b: number, c: number): number {
   return c;
 }
 
-/** 解码 PNG 为 RGBA8 像素（Buffer, w*h*4） */
+/** 解码 PNG 为 RGBA8 像素 — 纯 JS 回退路径 */
 export function decodeRgba(buf: Buffer): { width: number; height: number; rgba: Buffer } {
   const { meta, idat } = parsePng(buf);
   if (meta.bitDepth !== 8) throw new Error(`unsupported bitDepth ${meta.bitDepth}`);
   const { width, height, colorType } = meta;
   const bpp = bytesPerPixel(colorType);
-
   const raw = zlib.inflateSync(idat);
   const stride = width * bpp;
   const rgba = Buffer.alloc(width * height * 4);
-
   let prev = Buffer.alloc(stride);
   for (let y = 0; y < height; y++) {
     const rowStart = y * (stride + 1);
@@ -125,32 +139,22 @@ export function decodeRgba(buf: Buffer): { width: number; height: number; rgba: 
       }
       recon[i] = v;
     }
-    // 归一化到 RGBA
     for (let x = 0; x < width; x++) {
       const si = x * bpp;
       const di = (y * width + x) * 4;
       if (colorType === 6) {
-        rgba[di] = recon[si];
-        rgba[di + 1] = recon[si + 1];
-        rgba[di + 2] = recon[si + 2];
-        rgba[di + 3] = recon[si + 3];
+        rgba[di] = recon[si]; rgba[di + 1] = recon[si + 1];
+        rgba[di + 2] = recon[si + 2]; rgba[di + 3] = recon[si + 3];
       } else if (colorType === 2) {
-        rgba[di] = recon[si];
-        rgba[di + 1] = recon[si + 1];
-        rgba[di + 2] = recon[si + 2];
-        rgba[di + 3] = 255;
+        rgba[di] = recon[si]; rgba[di + 1] = recon[si + 1];
+        rgba[di + 2] = recon[si + 2]; rgba[di + 3] = 255;
       } else if (colorType === 0) {
-        rgba[di] = recon[si];
-        rgba[di + 1] = recon[si];
-        rgba[di + 2] = recon[si];
-        rgba[di + 3] = 255;
+        rgba[di] = recon[si]; rgba[di + 1] = recon[si];
+        rgba[di + 2] = recon[si]; rgba[di + 3] = 255;
       } else if (colorType === 4) {
-        rgba[di] = recon[si];
-        rgba[di + 1] = recon[si];
-        rgba[di + 2] = recon[si];
-        rgba[di + 3] = recon[si + 1];
+        rgba[di] = recon[si]; rgba[di + 1] = recon[si];
+        rgba[di + 2] = recon[si]; rgba[di + 3] = recon[si + 1];
       } else {
-        // 调色板：不常见，跳过（返回空）
         throw new Error('palette not supported');
       }
     }
@@ -159,107 +163,72 @@ export function decodeRgba(buf: Buffer): { width: number; height: number; rgba: 
   return { width, height, rgba };
 }
 
-/** 把 RGBA 像素编码为 PNG Buffer（8bit RGBA, filter 0） */
-export function encodePng(width: number, height: number, rgba: Buffer): Buffer {
+/** 把 RGBA 像素编码为 PNG Buffer — 纯 JS 回退 */
+function encodePng(width: number, height: number, rgba: Buffer): Buffer {
   const stride = width * 4;
   const raw = Buffer.alloc((stride + 1) * height);
   for (let y = 0; y < height; y++) {
-    raw[y * (stride + 1)] = 0; // filter None
+    raw[y * (stride + 1)] = 0;
     rgba.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride);
   }
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 6; // RGBA
-  ihdr[10] = 0;
-  ihdr[11] = 0;
-  ihdr[12] = 0;
-  // 使用 level 1 换取更快的编码速度（缩略图/标注图不需要极高压缩率）
+  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; ihdr[9] = 6; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
   const idat = zlib.deflateSync(raw, { level: 1 });
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', idat),
-    chunk('IEND', Buffer.alloc(0)),
+    chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0)),
   ]);
 }
 
 /**
- * 高效 RGB PNG 编码器（对齐 ok-script compress_coco 的压缩效果）。
- *
- * 与 encodePng 的区别：
- * - RGB (colorType=2) 而非 RGBA：省 33% 数据
- * - Sub filter (filter=1)：提高压缩率 10-30%
- * - zlib level 6：平衡压缩率与速度
+ * 高效 RGB PNG 编码器（供 saveToAssets bin-packing 使用，非热路径）。
  */
 export function encodePngRgb(width: number, height: number, rgba: Buffer): Buffer {
-  const stride = width * 3; // RGB, 3 bytes per pixel
+  const stride = width * 3;
   const raw = Buffer.alloc((stride + 1) * height);
-
   for (let y = 0; y < height; y++) {
     const rawRowStart = y * (stride + 1);
-    raw[rawRowStart] = 1; // filter: Sub (value = current - left)
-
+    raw[rawRowStart] = 1;
     const rgbaRowStart = y * width * 4;
     const rowStart = rawRowStart + 1;
-
-    // 第一个像素：filter=Sub 时 left=0，所以 raw = pixel
-    raw[rowStart] = rgba[rgbaRowStart];       // R
-    raw[rowStart + 1] = rgba[rgbaRowStart + 1]; // G
-    raw[rowStart + 2] = rgba[rgbaRowStart + 2]; // B
-
-    // 后续像素：raw = pixel - left
+    raw[rowStart] = rgba[rgbaRowStart];
+    raw[rowStart + 1] = rgba[rgbaRowStart + 1];
+    raw[rowStart + 2] = rgba[rgbaRowStart + 2];
     for (let x = 1; x < width; x++) {
       const di = rowStart + x * 3;
       const si = rgbaRowStart + x * 4;
       const pi = rgbaRowStart + (x - 1) * 4;
-      raw[di] = (rgba[si] - rgba[pi]) & 0xff;         // R
-      raw[di + 1] = (rgba[si + 1] - rgba[pi + 1]) & 0xff; // G
-      raw[di + 2] = (rgba[si + 2] - rgba[pi + 2]) & 0xff; // B
+      raw[di] = (rgba[si] - rgba[pi]) & 0xff;
+      raw[di + 1] = (rgba[si + 1] - rgba[pi + 1]) & 0xff;
+      raw[di + 2] = (rgba[si + 2] - rgba[pi + 2]) & 0xff;
     }
   }
-
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 2; // RGB (colorType=2)
-  ihdr[10] = 0;
-  ihdr[11] = 0;
-  ihdr[12] = 0;
-
+  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
   const idat = zlib.deflateSync(raw, { level: 6 });
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', idat),
-    chunk('IEND', Buffer.alloc(0)),
+    chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0)),
   ]);
 }
 
-/** 从 RGBA 像素按 bbox 裁剪并编码为 PNG data URL（统一高度等比缩放） */
-function cropAndEncode(
-  width: number,
-  height: number,
-  rgba: Buffer,
-  bbox: [number, number, number, number],
-  targetHeight: number,
+/** 纯 JS 回退：从 RGBA 按 bbox 裁剪并缩放为 PNG data URL */
+function cropAndEncodeSync(
+  width: number, height: number, rgba: Buffer,
+  bbox: [number, number, number, number], targetHeight: number,
 ): string {
   const [bx, by, bw, bh] = bbox;
   const cx = Math.max(0, Math.min(bx, width));
   const cy = Math.max(0, Math.min(by, height));
   const cw = Math.max(1, Math.min(bw, width - cx));
   const ch = Math.max(1, Math.min(bh, height - cy));
-
-  // 裁剪
   const cropped = Buffer.alloc(cw * ch * 4);
   for (let y = 0; y < ch; y++) {
     const srcStart = ((cy + y) * width + cx) * 4;
     rgba.copy(cropped, y * cw * 4, srcStart, srcStart + cw * 4);
   }
-
-  // 统一高度等比缩放（不足 targetHeight 也放大到统一高度）
   const scale = targetHeight / ch;
   const outW = Math.max(1, Math.round(cw * scale));
   const outH = Math.max(1, Math.round(ch * scale));
@@ -271,103 +240,171 @@ function cropAndEncode(
       cropped.copy(pixels, (y * outW + x) * 4, (sy * cw + sx) * 4, (sy * cw + sx) * 4 + 4);
     }
   }
-
-  const png = encodePng(outW, outH, pixels);
-  return `data:image/png;base64,${png.toString('base64')}`;
+  return `data:image/png;base64,${encodePng(outW, outH, pixels).toString('base64')}`;
 }
 
-/** 从原图按 bbox 裁剪并编码为 PNG data URL；失败返回 undefined */
-export function cropTemplateToDataUrl(
-  imagePath: string,
-  bbox: [number, number, number, number],
-  targetHeight = 100,
-): string | undefined {
-  try {
-    const buf = fs.readFileSync(imagePath);
-    const { width, height, rgba } = decodeRgba(buf);
-    return cropAndEncode(width, height, rgba, bbox, targetHeight);
-  } catch {
-    return undefined;
+/* ========================================================================
+ *  Worker 线程池 — sharp 原生处理，主线程零阻塞
+ * ======================================================================== */
+
+interface CropTask {
+  id: number;
+  imagePath: string;
+  bbox: [number, number, number, number];
+  targetHeight: number;
+  thumbDir: string;
+  resolve: (result: { dataUrl: string; filePath: string } | undefined) => void;
+}
+
+interface WorkerState {
+  worker: Worker;
+  busy: boolean;
+}
+
+let poolWorkers: WorkerState[] = [];
+let cropTaskQueue: CropTask[] = [];
+let poolMax = 2;
+let poolInitialized = false;
+let poolExtPath = '';
+let nextTaskId = 1;
+
+/** 初始化 worker 池（扩展激活时调用一次） */
+export function initCropWorkerPool(extensionPath: string, maxWorkers = 2): void {
+  if (poolInitialized) return;
+  poolInitialized = true;
+  poolExtPath = extensionPath;
+  poolMax = maxWorkers;
+}
+
+function ensurePool(): void {
+  if (!poolInitialized) return;
+  while (poolWorkers.length < poolMax) {
+    const worker = new Worker(path.join(poolExtPath, 'out', 'pngCropWorker.js'));
+    const state: WorkerState = { worker, busy: false };
+    worker.on('message', (msg: {
+      id: number;
+      results: Array<{ bbox: number[]; dataUrl: string; filePath: string }>;
+      error?: string;
+    }) => {
+      state.busy = false;
+      const idx = cropTaskQueue.findIndex((t) => t.id === msg.id);
+      if (idx >= 0) {
+        const task = cropTaskQueue.splice(idx, 1)[0];
+        if (msg.error || !msg.results?.length) {
+          task.resolve(undefined);
+        } else {
+          task.resolve({ dataUrl: msg.results[0].dataUrl, filePath: msg.results[0].filePath });
+        }
+      }
+      drainQueue();
+    });
+    worker.on('error', () => { state.busy = false; });
+    poolWorkers.push(state);
   }
 }
+
+function drainQueue(): void {
+  if (!poolInitialized) return;
+  ensurePool();
+  for (const state of poolWorkers) {
+    if (state.busy || cropTaskQueue.length === 0) continue;
+    const task = cropTaskQueue.shift();
+    if (!task) break;
+    state.busy = true;
+    state.worker.postMessage({
+      id: task.id,
+      imagePath: task.imagePath,
+      bboxes: [{ bbox: task.bbox, targetHeight: task.targetHeight }],
+      thumbDir: task.thumbDir,
+    });
+  }
+}
+
+/** 提交单个裁剪任务到 worker */
+function submitToWorker(
+  imagePath: string, bbox: [number, number, number, number],
+  targetHeight: number, thumbDir: string,
+): Promise<{ dataUrl: string; filePath: string } | undefined> {
+  return new Promise((resolve) => {
+    cropTaskQueue.push({ id: nextTaskId++, imagePath, bbox, targetHeight, thumbDir, resolve });
+    drainQueue();
+  });
+}
+
+/**
+ * 批量提交同一原图的多个 bbox 到 worker（同一图只 decode 一次）。
+ * 用 worker 的单条批量消息，避免多次 IPC。
+ */
+function submitBatchToWorker(
+  imagePath: string,
+  bboxes: Array<{ bbox: [number, number, number, number]; targetHeight: number }>,
+  thumbDir: string,
+): Promise<Array<{ bbox: [number, number, number, number]; dataUrl: string; filePath: string }>> {
+  return new Promise((resolve) => {
+    if (bboxes.length === 0) { resolve([]); return; }
+
+    const batchId = nextTaskId++;
+    ensurePool();
+
+    // 找一个空闲 worker（或等 drainQueue 调度）
+    const freeWorker = poolWorkers.find((w) => !w.busy);
+
+    const handler = (msg: { id: number; results: Array<{ bbox: number[]; dataUrl: string; filePath: string }>; error?: string }) => {
+      if (msg.id !== batchId) return;
+      for (const s of poolWorkers) s.worker.removeListener('message', handler);
+
+      const results: Array<{ bbox: [number, number, number, number]; dataUrl: string; filePath: string }> = [];
+      if (!msg.error) {
+        for (const r of msg.results) {
+          results.push({
+            bbox: r.bbox as [number, number, number, number],
+            dataUrl: r.dataUrl, filePath: r.filePath,
+          });
+        }
+      }
+      resolve(results);
+      drainQueue();
+    };
+    for (const s of poolWorkers) s.worker.on('message', handler);
+
+    if (freeWorker) {
+      freeWorker.busy = true;
+      freeWorker.worker.postMessage({
+        id: batchId, imagePath,
+        bboxes: bboxes.map((b) => ({ bbox: b.bbox, targetHeight: b.targetHeight })),
+        thumbDir,
+      });
+    } else {
+      // 所有 worker 忙：注册一个占位任务让 drainQueue 调度
+      const placeholder: CropTask = {
+        id: batchId, imagePath, bbox: bboxes[0].bbox,
+        targetHeight: bboxes[0].targetHeight, thumbDir,
+        resolve: () => { /* batch 用 handler 回调 */ },
+      };
+      cropTaskQueue.unshift(placeholder);
+      drainQueue();
+    }
+  });
+}
+
+/** 销毁 worker 池 */
+export function disposeCropWorkerPool(): void {
+  for (const s of poolWorkers) {
+    try { s.worker.terminate(); } catch { /* 忽略 */ }
+  }
+  poolWorkers = [];
+  poolInitialized = false;
+}
+
+/* ========================================================================
+ *  缓存 — 内存 data URL 缓存 + 磁盘缩略图文件
+ * ======================================================================== */
 
 const CROP_CACHE = new Map<string, string>();
 const CROP_CACHE_MAX = 600;
 
-function cropKey(
-  imagePath: string,
-  bbox: [number, number, number, number],
-  targetHeight: number,
-): string {
+function cropKey(imagePath: string, bbox: [number, number, number, number], targetHeight: number): string {
   return `${imagePath}|${bbox.join(',')}|${targetHeight}`;
-}
-
-/** 带缓存的裁剪：同图同 bbox 只解码一次（缓存 data URL）。 */
-export function cropTemplateToDataUrlCached(
-  imagePath: string,
-  bbox: [number, number, number, number],
-  targetHeight = 100,
-): string | undefined {
-  const key = cropKey(imagePath, bbox, targetHeight);
-  const hit = CROP_CACHE.get(key);
-  if (hit !== undefined) return hit;
-  const url = cropTemplateToDataUrl(imagePath, bbox, targetHeight);
-  if (url !== undefined) {
-    if (CROP_CACHE.size >= CROP_CACHE_MAX) CROP_CACHE.clear();
-    CROP_CACHE.set(key, url);
-  }
-  return url;
-}
-
-/** 预热裁剪请求 */
-export interface CropRequest {
-  imagePath: string;
-  bbox: [number, number, number, number];
-  targetHeight?: number;
-}
-
-/**
- * 后台预热：按原图分组解码（同一 4K 原图只解码一次），分片让出事件循环，
- * 把全部模板缩略图写进缓存，后续 hover/补全直接命中。只补缺失项。
- */
-export async function warmCropCache(
-  requests: CropRequest[],
-  batchSize = 4,
-): Promise<void> {
-  const groups = new Map<string, CropRequest[]>();
-  for (const r of requests) {
-    const arr = groups.get(r.imagePath);
-    if (arr) arr.push(r);
-    else groups.set(r.imagePath, [r]);
-  }
-
-  const imagePaths = [...groups.keys()];
-  for (let i = 0; i < imagePaths.length; i += batchSize) {
-    // 让出事件循环，避免阻塞 UI
-    await new Promise((resolve) => setImmediate(resolve));
-    const chunk = imagePaths.slice(i, i + batchSize);
-    for (const imagePath of chunk) {
-      const items = groups.get(imagePath)!;
-      const targetHeight = items[0]?.targetHeight ?? 100;
-      // 该原图的所有模板都已缓存则整组跳过
-      if (items.every((it) => CROP_CACHE.has(cropKey(it.imagePath, it.bbox, it.targetHeight ?? targetHeight)))) {
-        continue;
-      }
-      try {
-        const buf = fs.readFileSync(imagePath);
-        const { width, height, rgba } = decodeRgba(buf);
-        for (const it of items) {
-          const th = it.targetHeight ?? targetHeight;
-          const key = cropKey(it.imagePath, it.bbox, th);
-          if (CROP_CACHE.has(key)) continue;
-          if (CROP_CACHE.size >= CROP_CACHE_MAX) CROP_CACHE.clear();
-          CROP_CACHE.set(key, cropAndEncode(width, height, rgba, it.bbox, th));
-        }
-      } catch {
-        // 单张原图失败忽略，后续 hover 再按需处理
-      }
-    }
-  }
 }
 
 /** 模板标注/图片变化时清空裁剪缓存。 */
@@ -375,18 +412,209 @@ export function clearCropCache(): void {
   CROP_CACHE.clear();
 }
 
-/* ---------------- 原始分辨率裁剪落盘（供 saveToAssets bin-packing 使用） ---------------- */
+/* ---------------- 缩略图文件路径 ---------------- */
+
+function thumbFileName(imagePath: string, bbox: [number, number, number, number], targetHeight: number): string {
+  const key = `${imagePath}|${bbox.join(',')}|${targetHeight}`;
+  return `t_${crypto.createHash('sha1').update(key).digest('hex').slice(0, 16)}.png`;
+}
+
+/** 返回模板缩略图的确定性绝对路径，不创建文件。 */
+export function templateThumbFilePath(
+  imagePath: string, bbox: [number, number, number, number],
+  outDir: string, targetHeight = THUMB_HEIGHT,
+): string {
+  return path.join(outDir, thumbFileName(imagePath, bbox, targetHeight));
+}
+
+/* ========================================================================
+ *  warmCropCache — 用 worker 批量裁剪，主线程完全不阻塞
+ * ======================================================================== */
+
+export interface CropRequest {
+  imagePath: string;
+  bbox: [number, number, number, number];
+  targetHeight?: number;
+  thumbDir?: string;  // 缩略图落盘目录，确保 worker 写入正确位置
+}
 
 /**
- * 从原图按 bbox 裁剪（保持原始分辨率，不缩放），将裁剪区域写入指定路径的 PNG 文件。
- * 用于 saveToAssets 的 bin-packing 流程中单 bbox 直接裁剪场景。
- * @returns 输出文件绝对路径；失败返回 undefined。
+ * 后台预热：按原图分组提交 worker（同一 4K 原图只解码一次）。
+ * worker 用 sharp 处理，主线程只做 IPC 通信，完全不阻塞。
  */
+export async function warmCropCache(requests: CropRequest[]): Promise<void> {
+  const t0 = performance.now();
+  const groups = new Map<string, CropRequest[]>();
+  for (const r of requests) {
+    const arr = groups.get(r.imagePath);
+    if (arr) arr.push(r);
+    else groups.set(r.imagePath, [r]);
+  }
+  log(`warmCropCache: ${requests.length} requests, ${groups.size} images, pool=${poolInitialized}`);
+
+  if (!poolInitialized) {
+    // 纯 JS 回退：分批让出事件循环
+    for (const [imagePath, items] of groups) {
+      await new Promise((resolve) => setImmediate(resolve));
+      try {
+        const buf = fs.readFileSync(imagePath);
+        const { width, height, rgba } = decodeRgba(buf);
+        for (const it of items) {
+          const th = it.targetHeight ?? THUMB_HEIGHT;
+          const key = cropKey(it.imagePath, it.bbox, th);
+          if (CROP_CACHE.has(key)) continue;
+          if (CROP_CACHE.size >= CROP_CACHE_MAX) CROP_CACHE.clear();
+          CROP_CACHE.set(key, cropAndEncodeSync(width, height, rgba, it.bbox, th));
+        }
+      } catch { /* 忽略 */ }
+    }
+    return;
+  }
+
+  // Worker 路径：按图片分组批量提交
+  let workerHits = 0; let workerMisses = 0; let workerErrors = 0;
+  for (const [imagePath, items] of groups) {
+    const targetHeight = items[0]?.targetHeight ?? THUMB_HEIGHT;
+    const missing = items.filter((it) => !CROP_CACHE.has(cropKey(it.imagePath, it.bbox, it.targetHeight ?? targetHeight)));
+    if (missing.length === 0) { workerHits += items.length; continue; }
+    workerMisses += missing.length;
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // thumbDir 取自 CropRequest，确保 worker 写到正确的缩略图目录
+    const thumbDir = requests[0]?.thumbDir ?? path.dirname(templateThumbFilePath(imagePath, missing[0].bbox, '', targetHeight));
+    const imgT0 = performance.now();
+    const results = await submitBatchToWorker(
+      imagePath,
+      missing.map((it) => ({ bbox: it.bbox, targetHeight: it.targetHeight ?? targetHeight })),
+      thumbDir,
+    );
+    if (results.length === 0) workerErrors += missing.length;
+    log(`  worker batch: ${path.basename(imagePath)} ×${missing.length} → ${results.length} ok, ${(performance.now() - imgT0).toFixed(0)}ms`);
+
+    for (const r of results) {
+      const key = cropKey(imagePath, r.bbox, targetHeight);
+      if (!CROP_CACHE.has(key)) {
+        if (CROP_CACHE.size >= CROP_CACHE_MAX) CROP_CACHE.clear();
+        CROP_CACHE.set(key, r.dataUrl);
+      }
+    }
+  }
+  logT(`warmCropCache done [hit=${workerHits} miss=${workerMisses} err=${workerErrors}]`, t0);
+}
+
+/* ========================================================================
+ *  同步 API — 供 providers.ts hover/completion 使用
+ * ======================================================================== */
+
+/**
+ * 带缓存的裁剪（同步）：先查内存缓存，miss 则纯 JS 回退。
+ * warmCropCache 完成后均命中缓存，不阻塞主线程。
+ */
+export function cropTemplateToDataUrlCached(
+  imagePath: string, bbox: [number, number, number, number], targetHeight = THUMB_HEIGHT,
+): string | undefined {
+  const key = cropKey(imagePath, bbox, targetHeight);
+  const hit = CROP_CACHE.get(key);
+  if (hit !== undefined) { log(`sync hit: ${path.basename(imagePath)}`); return hit; }
+  const t0 = performance.now();
+  let url: string | undefined;
+  try {
+    const buf = fs.readFileSync(imagePath);
+    const { width, height, rgba } = decodeRgba(buf);
+    url = cropAndEncodeSync(width, height, rgba, bbox, targetHeight);
+  } catch {
+    return undefined;
+  }
+  if (url !== undefined) {
+    if (CROP_CACHE.size >= CROP_CACHE_MAX) CROP_CACHE.clear();
+    CROP_CACHE.set(key, url);
+    logT(`sync fallback (miss→JS decode): ${path.basename(imagePath)}`, t0);
+    return url;
+  }
+  return undefined;
+}
+
+/* ========================================================================
+ *  异步缩略图文件 — 供面板使用，主线程不阻塞
+ * ======================================================================== */
+
+/**
+ * 异步裁剪缩略图文件：文件缓存 → 内存缓存 → worker 裁剪。
+ */
+export async function cropTemplateThumbFileAsync(
+  imagePath: string, bbox: [number, number, number, number],
+  outDir: string, targetHeight = THUMB_HEIGHT,
+): Promise<string | undefined> {
+  const file = templateThumbFilePath(imagePath, bbox, outDir, targetHeight);
+  try {
+    if (fs.existsSync(file) && fs.statSync(file).size > 0) return file;
+  } catch { /* 重写 */ }
+
+  // 内存缓存命中：写入磁盘后返回
+  const cached = cropTemplateToDataUrlCached(imagePath, bbox, targetHeight);
+  if (cached) {
+    log(`thumb async: ${path.basename(imagePath)} from memcache → write disk`);
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, Buffer.from(cached.slice(cached.indexOf(',') + 1), 'base64'));
+      return file;
+    } catch { return undefined; }
+  }
+
+  // 无 worker 池：同步纯 JS 回退（仅在 worker 未初始化时）
+  if (!poolInitialized) {
+    log(`thumb async: ${path.basename(imagePath)} NO WORKER → sync JS fallback`);
+    try {
+      const buf = fs.readFileSync(imagePath);
+      const { width, height, rgba } = decodeRgba(buf);
+      const url = cropAndEncodeSync(width, height, rgba, bbox, targetHeight);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, Buffer.from(url.slice(url.indexOf(',') + 1), 'base64'));
+      return file;
+    } catch { return undefined; }
+  }
+
+  // 有 worker：提交异步任务（主线程不阻塞）
+  const t0 = performance.now();
+  const result = await submitToWorker(imagePath, bbox, targetHeight, outDir);
+  if (result) {
+    logT(`thumb async: ${path.basename(imagePath)} via worker`, t0);
+    const key = cropKey(imagePath, bbox, targetHeight);
+    if (!CROP_CACHE.has(key)) {
+      if (CROP_CACHE.size >= CROP_CACHE_MAX) CROP_CACHE.clear();
+      CROP_CACHE.set(key, result.dataUrl);
+    }
+    return result.filePath;
+  }
+  return undefined;
+}
+
+/** 删除一个确定性模板缩略图。 */
+export function removeTemplateThumbFile(
+  imagePath: string, bbox: [number, number, number, number],
+  outDir: string, targetHeight = THUMB_HEIGHT,
+): void {
+  try { fs.rmSync(templateThumbFilePath(imagePath, bbox, outDir, targetHeight), { force: true }); } catch { /* 忽略 */ }
+}
+
+/** 清空缩略图目录内容。 */
+export function clearThumbDir(outDir: string): void {
+  try {
+    if (!fs.existsSync(outDir)) return;
+    for (const f of fs.readdirSync(outDir)) {
+      try { fs.rmSync(path.join(outDir, f), { recursive: true, force: true }); } catch { /* 忽略 */ }
+    }
+  } catch { /* 忽略 */ }
+}
+
+/* ========================================================================
+ *  原始分辨率裁剪落盘（供 saveToAssets 使用，非热路径）
+ * ======================================================================== */
+
 export function cropTemplateOriginalFile(
-  imagePath: string,
-  bbox: [number, number, number, number],
-  outDir: string,
-  fileName: string,
+  imagePath: string, bbox: [number, number, number, number],
+  outDir: string, fileName: string,
 ): string | undefined {
   try {
     const buf = fs.readFileSync(imagePath);
@@ -396,259 +624,104 @@ export function cropTemplateOriginalFile(
     const cy = Math.max(0, Math.min(by, height));
     const cw = Math.max(1, Math.min(bw, width - cx));
     const ch = Math.max(1, Math.min(bh, height - cy));
-
-    // 裁剪（不缩放）
     const cropped = Buffer.alloc(cw * ch * 4);
     for (let y = 0; y < ch; y++) {
       const srcStart = ((cy + y) * width + cx) * 4;
       rgba.copy(cropped, y * cw * 4, srcStart, srcStart + cw * 4);
     }
-
     const png = encodePng(cw, ch, cropped);
     fs.mkdirSync(outDir, { recursive: true });
     const outPath = path.join(outDir, fileName);
     fs.writeFileSync(outPath, png);
     return outPath;
-  } catch {
-    return undefined;
-  }
+  } catch { return undefined; }
 }
 
-/* ---------------- 缩略图落盘（供 webview 通过 asWebviewUri 加载） ---------------- */
+/* ========================================================================
+ *  原图标注查看（非热路径）
+ * ======================================================================== */
 
-/** 生成确定性文件名：同图同 bbox 同尺寸 → 同一文件，天然去重 */
-function thumbFileName(imagePath: string, bbox: [number, number, number, number], targetHeight: number): string {
-  const key = `${imagePath}|${bbox.join(',')}|${targetHeight}`;
-  const hash = crypto.createHash('sha1').update(key).digest('hex').slice(0, 16);
-  return `t_${hash}.png`;
-}
-
-/** 返回模板缩略图的确定性绝对路径，不创建文件。 */
-export function templateThumbFilePath(
-  imagePath: string,
-  bbox: [number, number, number, number],
-  outDir: string,
-  targetHeight = 96,
-): string {
-  return path.join(outDir, thumbFileName(imagePath, bbox, targetHeight));
-}
-
-/**
- * 把模板缩略图写成 PNG 文件（复用 data URL 裁剪缓存），返回文件绝对路径。
- * webview 中用 asWebviewUri 加载本地文件比 data: URL 更可靠。
- */
-export function cropTemplateThumbFile(
-  imagePath: string,
-  bbox: [number, number, number, number],
-  outDir: string,
-  targetHeight = 96,
-): string | undefined {
-  const file = templateThumbFilePath(imagePath, bbox, outDir, targetHeight);
-  try {
-    if (fs.existsSync(file) && fs.statSync(file).size > 0) return file;
-  } catch {
-    // 状态异常则重写
-  }
-  const url = cropTemplateToDataUrlCached(imagePath, bbox, targetHeight);
-  if (!url) return undefined;
-  try {
-    fs.mkdirSync(outDir, { recursive: true });
-    fs.writeFileSync(file, Buffer.from(url.slice(url.indexOf(',') + 1), 'base64'));
-    return file;
-  } catch {
-    return undefined;
-  }
-}
-
-/** 删除一个确定性模板缩略图；用于共享缓存中的定向失效。 */
-export function removeTemplateThumbFile(
-  imagePath: string,
-  bbox: [number, number, number, number],
-  outDir: string,
-  targetHeight = 96,
-): void {
-  try {
-    fs.rmSync(templateThumbFilePath(imagePath, bbox, outDir, targetHeight), { force: true });
-  } catch {
-    // 缩略图不存在或删除失败时忽略，后续仍可按需重建
-  }
-}
-
-/** 清空缩略图目录内容（目录不存在则忽略；递归删除子目录）。 */
-export function clearThumbDir(outDir: string): void {
-  try {
-    if (!fs.existsSync(outDir)) return;
-    for (const f of fs.readdirSync(outDir)) {
-      try {
-        fs.rmSync(path.join(outDir, f), { recursive: true, force: true });
-      } catch {
-        // 单个删除失败忽略
-      }
-    }
-  } catch {
-    // 忽略
-  }
-}
-
-/* ---------------- 原图查看（ok_templates 原图 + bbox 红框标注） ---------------- */
-
-/**
- * 把 assets/images/N.png 映射到真正的原始截图 ok_templates/N.png。
- * 兼容 ok_tasks/assets/images → ok_tasks/ok_templates 与仓库根 ok_templates；
- * 找不到映射时回退原路径。
- */
 export function resolveOriginalImagePath(imagePath: string): string {
   const m = imagePath.match(/^(.*[/\\])assets[/\\]images([/\\][^/\\]+)$/);
   if (!m) return imagePath;
-  const candidates: string[] = [];
-  const rest = m[2];
-  let prefix = m[1];
-  candidates.push(path.join(prefix, 'ok_templates', rest));
-  // ok_tasks/assets/images → 仓库根的 ok_templates
-  const stripped = prefix.replace(/ok_tasks[/\\]$/, '');
-  if (stripped !== prefix) candidates.push(path.join(stripped, 'ok_templates', rest));
+  const rest = m[2]; const prefix = m[1];
+  const candidates = [
+    path.join(prefix, 'ok_templates', rest),
+    path.join(prefix.replace(/ok_tasks[/\\]$/, ''), 'ok_templates', rest),
+  ];
   for (const c of candidates) {
-    try {
-      if (fs.existsSync(c)) return c;
-    } catch {
-      // 忽略
-    }
+    try { if (fs.existsSync(c)) return c; } catch { /* 忽略 */ }
   }
   return imagePath;
 }
 
-/** 在 RGBA 像素上沿矩形边缘向内画描边 */
 function strokeRectInward(
-  rgba: Buffer,
-  imgW: number,
-  imgH: number,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  thickness: number,
-  r: number,
-  g: number,
-  b: number,
+  rgba: Buffer, imgW: number, imgH: number,
+  x: number, y: number, w: number, h: number, thickness: number,
+  r: number, g: number, b: number,
 ): void {
-  const x0 = Math.max(0, x);
-  const y0 = Math.max(0, y);
-  const x1 = Math.min(imgW - 1, x + w - 1);
-  const y1 = Math.min(imgH - 1, y + h - 1);
+  const x0 = Math.max(0, x), y0 = Math.max(0, y);
+  const x1 = Math.min(imgW - 1, x + w - 1), y1 = Math.min(imgH - 1, y + h - 1);
   if (x1 < x0 || y1 < y0) return;
   for (let py = y0; py <= y1; py++) {
     for (let px = x0; px <= x1; px++) {
       if (px < x0 + thickness || px > x1 - thickness || py < y0 + thickness || py > y1 - thickness) {
         const i = (py * imgW + px) * 4;
-        rgba[i] = r;
-        rgba[i + 1] = g;
-        rgba[i + 2] = b;
-        rgba[i + 3] = 255;
+        rgba[i] = r; rgba[i + 1] = g; rgba[i + 2] = b; rgba[i + 3] = 255;
       }
     }
   }
 }
 
-/** 在 bbox 处画标注框：红色主框（覆盖 bbox 边缘）+ 外圈白色光晕，任何底色下都可见 */
 function drawRectOutline(
-  rgba: Buffer,
-  imgW: number,
-  imgH: number,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  thickness: number,
+  rgba: Buffer, imgW: number, imgH: number,
+  x: number, y: number, w: number, h: number, thickness: number,
 ): void {
   const halo = Math.max(2, thickness >> 1);
-  // 先画白色：矩形向外扩 halo，描边宽度 thickness+halo，随后红色覆盖其内侧 thickness，
-  // 最终效果 = bbox 边缘内 thickness 红色 + 向外 halo 白色
   strokeRectInward(rgba, imgW, imgH, x - halo, y - halo, w + 2 * halo, h + 2 * halo, thickness + halo, 255, 255, 255);
   strokeRectInward(rgba, imgW, imgH, x, y, w, h, thickness, 255, 40, 40);
 }
 
-/**
- * 解码原图、在 bbox 处画红框标注并写出 PNG。
- * 优化：只裁剪 bbox 周围区域（含 200px 边距）并编码，而非全图，大幅提速。
- * 返回输出文件路径；失败返回 undefined。
- */
 export function writeAnnotatedImage(
-  imagePath: string,
-  bbox: [number, number, number, number],
-  outPath: string,
+  imagePath: string, bbox: [number, number, number, number], outPath: string,
 ): string | undefined {
   try {
     const buf = fs.readFileSync(imagePath);
     const { width, height, rgba } = decodeRgba(buf);
-    const [bx, by, bw, bh] = [
-      Math.max(0, Math.min(bbox[0], width - 1)),
-      Math.max(0, Math.min(bbox[1], height - 1)),
-      Math.max(1, Math.min(bbox[2], width - Math.max(0, bbox[0]))),
-      Math.max(1, Math.min(bbox[3], height - Math.max(0, bbox[1]))),
-    ];
-    // 围绕 bbox 裁剪区域，含 200px 边距（不超出图片边界）
+    const bx = Math.max(0, Math.min(bbox[0], width - 1));
+    const by = Math.max(0, Math.min(bbox[1], height - 1));
+    const bw = Math.max(1, Math.min(bbox[2], width - Math.max(0, bbox[0])));
+    const bh = Math.max(1, Math.min(bbox[3], height - Math.max(0, bbox[1])));
     const pad = 200;
-    const cropX = Math.max(0, bx - pad);
-    const cropY = Math.max(0, by - pad);
+    const cropX = Math.max(0, bx - pad), cropY = Math.max(0, by - pad);
     const cropW = Math.min(width - cropX, bw + 2 * pad + Math.min(pad, bx));
     const cropH = Math.min(height - cropY, bh + 2 * pad + Math.min(pad, by));
-
-    // 裁剪像素区域
     const cropRgba = Buffer.alloc(cropW * cropH * 4);
     for (let y = 0; y < cropH; y++) {
       const srcStart = ((cropY + y) * width + cropX) * 4;
       rgba.copy(cropRgba, y * cropW * 4, srcStart, srcStart + cropW * 4);
     }
-
-    // 在裁剪区域中画标注框（坐标需要相对偏移）
-    const relX = bx - cropX;
-    const relY = by - cropY;
     const thickness = Math.max(3, Math.min(10, Math.round(Math.min(width, height) * 0.004)));
-    drawRectOutline(cropRgba, cropW, cropH, relX, relY, bw, bh, thickness);
-
+    drawRectOutline(cropRgba, cropW, cropH, bx - cropX, by - cropY, bw, bh, thickness);
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
-    // 用低压缩级别换取生成速度（标注图不需要极高压缩率）
     fs.writeFileSync(outPath, encodePng(cropW, cropH, cropRgba));
     return outPath;
-  } catch {
-    return undefined;
-  }
+  } catch { return undefined; }
 }
 
-/**
- * 生成（带缓存）"原始截图 + bbox 红框标注" 的 PNG，返回文件路径。
- * 原图来源按优先级：
- *   1. ok_templates 反查（labelme json 按模板名+坐标匹配，最准确）
- *   2. coco 引用的 assets/images 副本兜底（可能非原始分辨率，但内容正确）
- * 同一来源同一 bbox 只生成一次。
- * 注：已移除 resolveOriginalImagePath 的简单编号映射，因 assets/images 与
- * ok_templates 的编号不对应，会导致找到错误的图片。
- */
 export function openAnnotatedImage(
-  imagePath: string,
-  name: string,
-  bbox: [number, number, number, number],
-  thumbDir: string,
-  rootDir: string,
+  imagePath: string, name: string, bbox: [number, number, number, number],
+  thumbDir: string, rootDir: string,
 ): string | undefined {
   const candidates: string[] = [];
   const viaLabelme = findOkTemplateOriginal(rootDir, name, bbox);
   if (viaLabelme) candidates.push(viaLabelme);
   if (!candidates.includes(imagePath)) candidates.push(imagePath);
-
   for (const src of candidates) {
-    try {
-      if (!fs.existsSync(src)) continue;
-    } catch {
-      continue;
-    }
+    try { if (!fs.existsSync(src)) continue; } catch { continue; }
     const key = crypto.createHash('sha1').update(`${src}|${bbox.join(',')}`).digest('hex').slice(0, 16);
     const out = path.join(thumbDir, 'annotated', `a_${key}.png`);
-    try {
-      if (fs.existsSync(out) && fs.statSync(out).size > 0) return out;
-    } catch {
-      // 状态异常则重新生成
-    }
+    try { if (fs.existsSync(out) && fs.statSync(out).size > 0) return out; } catch { /* 重新生成 */ }
     const written = writeAnnotatedImage(src, bbox, out);
     if (written) return written;
   }

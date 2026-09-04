@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import { TemplateAssetData } from './templateAssetData';
 import { AnnotationPanel } from './annotationPanel';
-import { cropTemplateThumbFile } from './pngCrop';
+import { cropTemplateThumbFileAsync, THUMB_HEIGHT } from './pngCrop';
 import { injectWebviewLocalization, tr, webviewStrings } from './localization';
 
 /** 窗口配置（从项目 config.py 的 windows 子字典提取） */
@@ -145,7 +145,7 @@ class AssetGalleryController {
       for (const meta of metas.slice(i, i + batchSize)) {
         const entry = this.data.getImageEntryForPath(meta.imagePath);
         const bbox: [number, number, number, number] = [0, 0, entry?.width ?? 100, entry?.height ?? 100];
-        const file = cropTemplateThumbFile(meta.imagePath, bbox, this.thumbDir, 96);
+        const file = await cropTemplateThumbFileAsync(meta.imagePath, bbox, this.thumbDir, THUMB_HEIGHT);
         if (!file) continue;
         items.push({
           name: meta.name,

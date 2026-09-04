@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { FeatureData } from './featureData';
-import { cropTemplateThumbFile, openAnnotatedImage } from './pngCrop';
+import { cropTemplateThumbFileAsync, openAnnotatedImage, THUMB_HEIGHT } from './pngCrop';
 import { featureAliases } from './providers';
 import { injectWebviewLocalization, tr } from './localization';
 
@@ -119,7 +119,7 @@ class GalleryController {
       if (gen !== this.generation || this.disposed) return;
       const items: { name: string; url: string }[] = [];
       for (const meta of metas.slice(i, i + batchSize)) {
-        const file = cropTemplateThumbFile(meta.imagePath, meta.bbox, this.thumbDir, 96);
+        const file = await cropTemplateThumbFileAsync(meta.imagePath, meta.bbox, this.thumbDir, THUMB_HEIGHT);
         if (!file) continue;
         items.push({
           name: meta.name,
