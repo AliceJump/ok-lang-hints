@@ -1,5 +1,14 @@
 # ok-script Toolkit
 
+> [!IMPORTANT]
+> **此仓库已停止维护，准备归档。**
+>
+> `ok-lang-hints` 已完成迁移并由 **[AliceJump/ok-script-toolkit](https://github.com/AliceJump/ok-script-toolkit)** 继续开发维护。
+> JetBrains 版本请使用 **[AliceJump/ok-script-toolkit-jetbrains](https://github.com/AliceJump/ok-script-toolkit-jetbrains)**。
+>
+> 本仓库仅保留历史代码与迁移记录，不再接受功能开发，也不会再从这里发布 VS Code 或 JetBrains Marketplace 更新。下面的内容仅作为历史参考。
+
+
 面向 ok-script 项目的 VS Code 完整开发辅助扩展，为 Python 代码中的语言键和图像模板提供可视化提示，并提供模板管理、任务启动和角色数据工具。
 
 ## 功能
